@@ -224,10 +224,18 @@ final class ClaudeRecapGenerator {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: claudePath)
         p.arguments = ["-p", "--output-format", "text", "--model", "haiku", "--system-prompt", system]
+        // Force the spawned claude's cwd to /tmp so it never probes a TCC-
+        // protected folder (Documents / Downloads / Desktop / iCloud Drive).
+        // Otherwise the child inherits our app's cwd and triggers a
+        // "ClaudeMenubar wants to access this folder" prompt the first time
+        // its auto-discovery (CLAUDE.md, .git, package.json, ...) reaches one.
+        let safeCwd = NSTemporaryDirectory()
+        p.currentDirectoryURL = URL(fileURLWithPath: safeCwd)
         // hook.py 가 spawn 된 claude 의 lifecycle event 를 무시하도록 env 마커 주입.
         // 부모 환경을 inherit 하므로 PATH 등 시스템 변수도 함께 전달.
         var env = ProcessInfo.processInfo.environment
         env["CLAUDE_MENUBAR_INTERNAL"] = "1"
+        env["PWD"] = safeCwd   // some tools read PWD instead of getcwd()
         p.environment = env
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
