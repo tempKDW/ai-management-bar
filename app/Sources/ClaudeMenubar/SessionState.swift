@@ -2,7 +2,8 @@ import Foundation
 
 enum SessionStatus: String, Codable, Equatable {
     case running
-    case waiting
+    case waiting   // 사용자 action 필요 (권한·결정)
+    case idle      // 사용자 차례, 시급 X (AI 응답 끝나고 입력 대기 중)
     case done
     case unknown
 
@@ -10,6 +11,7 @@ enum SessionStatus: String, Codable, Equatable {
         switch self {
         case .running: return "🟢"
         case .waiting: return "🟡"
+        case .idle:    return "🔵"
         case .done:    return "✅"
         case .unknown: return "⚪️"
         }
@@ -151,8 +153,9 @@ struct SessionState: Codable, Identifiable, Equatable {
     /// Whether there's been transcript activity since last_viewed_at.
     var hasUnreadSinceLastViewed: Bool {
         guard let lastViewed = lastViewedAt, !lastViewed.isEmpty else {
-            // Never viewed → consider unread if currently active.
-            return state == .running || state == .waiting
+            // Never viewed → unread for any live state (response arriving or
+            // already waiting on the user).
+            return state == .running || state == .waiting || state == .idle
         }
         return updatedAt > lastViewed
     }

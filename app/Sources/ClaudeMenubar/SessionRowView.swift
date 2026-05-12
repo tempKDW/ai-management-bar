@@ -88,7 +88,8 @@ struct SessionRowView: View {
         switch session.state {
         case .running: return .green
         case .waiting: return .orange
-        case .done:    return .blue
+        case .idle:    return .blue
+        case .done:    return .gray
         case .unknown: return .secondary
         }
     }

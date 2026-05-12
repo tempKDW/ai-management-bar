@@ -202,9 +202,18 @@ def main() -> None:
             )
 
     elif event == "Notification":
-        message = payload.get("message", "입력 대기")
-        state["state"] = "waiting"
-        state["current_task"] = truncate(message, 80)
+        message = payload.get("message", "")
+        # 일반 turn 종료 후 사용자 차례를 알리는 routine notification 은 idle 로 분류.
+        # 권한 요청·결정 요구 같은 명시적 action 필요는 waiting 으로 좁혀 유지.
+        if "waiting for your input" in message.lower():
+            state["state"] = "idle"
+            # current_task 는 직전 Stop 에서 설정된 마지막 assistant 텍스트를 유지.
+            # 만약 비어있으면 안내 문구로 fallback.
+            if not state.get("current_task"):
+                state["current_task"] = "사용자 차례"
+        else:
+            state["state"] = "waiting"
+            state["current_task"] = truncate(message, 80) or "입력 대기"
 
     elif event == "Stop":
         state["state"] = "done"

@@ -35,7 +35,8 @@ struct ClaudeMenubarApp: App {
         return n == 0 ? "" : "\(n)"
     }
 
-    /// 상태 인식 아이콘: waiting > running > done/empty 우선순위.
+    /// 상태 인식 아이콘 우선순위: waiting (action 필요) > running > idle/done/empty.
+    /// idle 은 시급도가 낮아 메뉴바 아이콘을 강조하지 않습니다 (secondary).
     private var menuIcon: String {
         if store.sessions.contains(where: { $0.state == .waiting }) {
             return "exclamationmark.bubble.fill"
@@ -53,7 +54,7 @@ struct ClaudeMenubarApp: App {
         if store.sessions.contains(where: { $0.state == .running }) {
             return .primary
         }
-        return .secondary
+        return .secondary   // idle · done · empty
     }
 }
 

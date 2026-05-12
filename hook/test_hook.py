@@ -82,7 +82,7 @@ class HookTests(unittest.TestCase):
         # Should be first line only
         self.assertNotIn("자세한", state["current_task"])
 
-    def test_notification_sets_waiting(self):
+    def test_notification_action_needed_sets_waiting(self):
         run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
                   "cwd": str(self.home)}, self.home)
         run_hook({
@@ -94,6 +94,28 @@ class HookTests(unittest.TestCase):
         state = read_state(self.home, self.sid)
         self.assertEqual(state["state"], "waiting")
         self.assertEqual(state["current_task"], "Bash 실행 허가 필요")
+
+    def test_notification_routine_input_wait_sets_idle(self):
+        run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
+                  "cwd": str(self.home)}, self.home)
+        # Stop 으로 마지막 assistant 텍스트가 current_task 에 기록되어 있다고 가정
+        run_hook({
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": self.sid,
+            "cwd": str(self.home),
+            "prompt": "구현해줘",
+        }, self.home)
+        # Claude Code 의 routine turn-end notification
+        run_hook({
+            "hook_event_name": "Notification",
+            "session_id": self.sid,
+            "cwd": str(self.home),
+            "message": "Claude is waiting for your input",
+        }, self.home)
+        state = read_state(self.home, self.sid)
+        self.assertEqual(state["state"], "idle")
+        # current_task 는 직전 UserPromptSubmit 의 prompt 가 그대로 남아있어야 함
+        self.assertEqual(state["current_task"], "구현해줘")
 
     def test_pre_tool_use_does_not_clobber_waiting(self):
         run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
