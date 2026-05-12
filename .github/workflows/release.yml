@@ -1,0 +1,62 @@
+name: Release latest build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build (release)
+        working-directory: app
+        run: swift build -c release
+
+      - name: Make .app bundle
+        run: bash scripts/make-app-bundle.sh
+
+      - name: Verify embedded hook source is in sync
+        run: |
+          diff \
+            <(python3 -c "import re; s=open('app/Sources/ClaudeMenubar/EmbeddedHookSource.swift').read(); m=re.search(r'hookSource: String = #\"\"\"\n(.*?)\n\"\"\"#', s, re.S); print(m.group(1))") \
+            hook/hook.py
+          diff \
+            <(python3 -c "import re; s=open('app/Sources/ClaudeMenubar/EmbeddedHookSource.swift').read(); m=re.search(r'transcriptSignalsSource: String = #\"\"\"\n(.*?)\n\"\"\"#', s, re.S); print(m.group(1))") \
+            hook/transcript_signals.py
+
+      - name: Run Python tests
+        run: |
+          python3 hook/test_hook.py
+          python3 hook/test_transcript_signals.py
+
+      - name: Zip bundle
+        working-directory: dist
+        run: zip -r ClaudeMenubar.app.zip ClaudeMenubar.app
+
+      - name: Publish "latest" prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          prerelease: true
+          files: dist/ClaudeMenubar.app.zip
+          body: |
+            Auto-built from `main` @ `${{ github.sha }}` on ${{ github.event.repository.updated_at }}.
+
+            ## Install
+            1. Download `ClaudeMenubar.app.zip`
+            2. Unzip and move `ClaudeMenubar.app` to `/Applications`
+            3. First launch: right-click → Open (Gatekeeper bypass), or run
+               `xattr -dr com.apple.quarantine /Applications/ClaudeMenubar.app`
+            4. Allow iTerm2 automation when prompted
+
+            Source: https://github.com/${{ github.repository }}/commit/${{ github.sha }}

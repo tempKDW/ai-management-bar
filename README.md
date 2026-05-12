@@ -72,21 +72,33 @@
    - 10초 polling 마다 AFK 5분 + transcript 갱신 감지 → background `claude` CLI 호출
    - 행 클릭 → `osascript` 로 iTerm2 탭 활성화 (`ITERM_SESSION_ID` 매핑)
 
-## 설치 / 실행
+## Quick start (built binary)
 
-### 1. 의존성
+GitHub Actions 가 매 main push 마다 macOS `.app` bundle 을 자동으로 빌드해 [Releases → Latest](https://github.com/tempKDW/ai-management-bar/releases/latest) 에 올립니다.
+
+1. **다운로드**: `ClaudeMenubar.app.zip` 받아 압축 풀기
+2. **이동**: `ClaudeMenubar.app` 을 `/Applications` 또는 `~/Applications` 로
+3. **Gatekeeper 우회 (첫 실행만)** — 미서명 빌드이므로:
+   - 방법 A: Finder 에서 `ClaudeMenubar.app` 우클릭 → **열기** → 경고창의 "열기" 다시 클릭
+   - 방법 B: 터미널에서 `xattr -dr com.apple.quarantine /Applications/ClaudeMenubar.app` 한 줄
+4. **iTerm2 자동화 권한** — 처음 행 클릭 시 macOS 가 권한 prompt → 허용
+
+요구사항: macOS 13+ · `claude` CLI 가 `PATH` 에 있어야 자동 recap 동작 (`which claude` 확인).
+
+## Build from source
 
 ```sh
 xcode-select --install   # Swift toolchain (이미 있으면 skip)
-which claude             # Claude Code CLI 가 PATH 에 있어야 자동 recap 동작
-```
+which claude             # claude CLI 확인
 
-### 2. 빌드 & 실행 (이 한 줄이면 끝)
-
-```sh
+# 빌드 & 실행
 cd app
 swift build -c release
 ./.build/release/ClaudeMenubar
+
+# 또는 .app bundle 까지 만들기
+bash scripts/make-app-bundle.sh --build
+open dist/ClaudeMenubar.app
 ```
 
 앱 시작 시 자동으로:
@@ -95,11 +107,9 @@ swift build -c release
 2. `~/.claude/settings.json` 백업 후 hooks 섹션에 안전 머지 (다른 도구 hook 보존)
 3. 메뉴 막대에 아이콘 표시 + 활성 세션 자동 발견
 
-첫 실행 시 macOS 가 iTerm2 자동화 권한을 한 번 묻습니다. 허용해야 행 클릭 → 탭 전환 동작.
+## 부팅 시 자동 실행 (선택)
 
-### 3. 부팅 시 자동 실행 (선택)
-
-시스템 설정 → 로그인 항목에 빌드된 binary 추가.
+시스템 설정 → 로그인 항목에 `ClaudeMenubar.app` 추가.
 
 ## 자동 recap 정책
 
