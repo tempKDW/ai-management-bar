@@ -1,0 +1,234 @@
+import Foundation
+import Combine
+
+/// Watches ~/.claude/menubar/sessions for JSON state files and exposes them.
+@MainActor
+final class SessionStore: ObservableObject {
+    @Published private(set) var sessions: [SessionState] = []
+
+    private let dirURL: URL
+    private var dispatchSource: DispatchSourceFileSystemObject?
+    private var dirFD: Int32 = -1
+    private var pollTimer: Timer?
+
+    init() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        self.dirURL = home
+            .appendingPathComponent(".claude")
+            .appendingPathComponent("menubar")
+            .appendingPathComponent("sessions")
+        try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        startWatching()
+        reload()
+        runDiscovery()
+        triggerRecaps()
+        // Lightweight poll to catch in-file updates and to bootstrap sessions
+        // started before the menubar app launched.
+        self.pollTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.reload()
+                self?.runDiscovery()
+                self?.triggerRecaps()
+            }
+        }
+    }
+
+    private func triggerRecaps() {
+        for s in sessions {
+            ClaudeRecapGenerator.shared.generateIfNeeded(for: s, store: self)
+        }
+    }
+
+    deinit {
+        dispatchSource?.cancel()
+        if dirFD >= 0 { close(dirFD) }
+        pollTimer?.invalidate()
+    }
+
+    private func startWatching() {
+        dirFD = open(dirURL.path, O_EVTONLY)
+        guard dirFD >= 0 else { return }
+        let src = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: dirFD,
+            eventMask: [.write, .delete, .rename, .extend, .attrib],
+            queue: .main
+        )
+        src.setEventHandler { [weak self] in
+            self?.reload()
+        }
+        src.setCancelHandler { [weak self] in
+            if let fd = self?.dirFD, fd >= 0 { close(fd) }
+            self?.dirFD = -1
+        }
+        src.resume()
+        self.dispatchSource = src
+    }
+
+    func reload() {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: dirURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            self.sessions = []
+            return
+        }
+        let decoder = JSONDecoder()
+        var loaded: [SessionState] = []
+        for url in urls where url.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: url),
+                  let s = try? decoder.decode(SessionState.self, from: data) else {
+                continue
+            }
+            // Stale cleanup: pid no longer alive AND not "done"
+            if let pid = s.pid, !processAlive(pid: pid), s.state != .done {
+                try? fm.removeItem(at: url)
+                continue
+            }
+            loaded.append(s)
+        }
+        // Sort: most recently active first (regardless of state)
+        loaded.sort { $0.updatedAt > $1.updatedAt }
+        self.sessions = loaded
+    }
+
+    private func processAlive(pid: Int) -> Bool {
+        // kill(pid, 0) returns 0 if process exists and we have permission.
+        // ESRCH means it's gone.
+        return kill(pid_t(pid), 0) == 0 || errno == EPERM
+    }
+
+    // MARK: - Discovery (backfill for sessions started before app launch)
+
+    private func runDiscovery() {
+        Task.detached(priority: .utility) {
+            let discovered = SessionDiscovery.discover()
+            await MainActor.run { [weak self] in
+                self?.applyDiscovered(discovered)
+            }
+        }
+    }
+
+    private func applyDiscovered(_ discovered: [DiscoveredSession]) {
+        let fm = FileManager.default
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let home = fm.homeDirectoryForCurrentUser.path
+        var didWrite = false
+        for d in discovered {
+            let path = dirURL.appendingPathComponent("\(d.claudeSessionID).json")
+            if fm.fileExists(atPath: path.path) {
+                // Hook 이 이미 만든 상태 파일이 더 정확. 건드리지 않습니다.
+                continue
+            }
+            var dict: [String: Any] = [
+                "claude_session_id": d.claudeSessionID,
+                "cwd": d.cwd,
+                "cwd_display": tildify(d.cwd, home: home),
+                "transcript_path": d.transcriptPath,
+                "state": "running",
+                "current_task": Self.truncate(d.lastMessage, limit: 80) ?? "활성 세션 (외부 발견)",
+                "pid": d.pid,
+                "updated_at": isoFormatter.string(from: Date()),
+            ]
+            if let b = d.branch { dict["branch"] = b }
+            if let it = d.itermSessionID { dict["iterm_session_id"] = it }
+            guard let data = try? JSONSerialization.data(
+                withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]
+            ) else { continue }
+            let tmp = path.appendingPathExtension("tmp")
+            try? data.write(to: tmp, options: .atomic)
+            do {
+                try fm.moveItem(at: tmp, to: path)
+                didWrite = true
+            } catch {
+                try? fm.removeItem(at: tmp)
+            }
+        }
+        if didWrite { reload() }
+    }
+
+    private func tildify(_ path: String, home: String) -> String {
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
+        return path
+    }
+
+    private static func truncate(_ s: String?, limit: Int) -> String? {
+        guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+        let firstLine = s.split(whereSeparator: { $0.isNewline }).first.map(String.init) ?? s
+        if firstLine.count > limit {
+            return String(firstLine.prefix(limit - 1)) + "…"
+        }
+        return firstLine
+    }
+
+    // MARK: - State patching (menubar-owned fields)
+    //
+    // Hook 과 같은 파일을 patch 하지만 다른 키만 건드립니다. atomic rename 으로
+    // tearing 은 막지만, hook 과 동시 patch 시 last-writer-wins 가능성 있습니다.
+    // 동시성 충돌은 드물고 영향도 작아 (last_viewed_at 한 두 번 늦게 반영) 일단
+    // 단순한 read-modify-write 를 채택합니다.
+
+    func markViewed(_ session: SessionState) {
+        let now = Self.isoNow()
+        patchState(sessionID: session.id) { dict in
+            dict["last_viewed_at"] = now
+        }
+    }
+
+    func markAllViewed() {
+        let now = Self.isoNow()
+        for s in sessions {
+            patchState(sessionID: s.id) { dict in
+                dict["last_viewed_at"] = now
+            }
+        }
+    }
+
+    func saveNote(sessionID: String, note: String) {
+        patchState(sessionID: sessionID) { dict in
+            if note.isEmpty {
+                dict.removeValue(forKey: "next_step_note")
+            } else {
+                dict["next_step_note"] = note
+            }
+        }
+        reload()
+    }
+
+    func saveClaudeRecap(sessionID: String, recap: ClaudeRecap) {
+        patchState(sessionID: sessionID) { dict in
+            dict["claude_recap"] = [
+                "text": recap.text,
+                "transcript_hash": recap.transcriptHash,
+                "generated_at": recap.generatedAt,
+            ]
+        }
+        reload()
+    }
+
+    private func patchState(sessionID: String, mutate: (inout [String: Any]) -> Void) {
+        let url = dirURL.appendingPathComponent("\(sessionID).json")
+        guard let data = try? Data(contentsOf: url),
+              var dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return }
+        mutate(&dict)
+        guard let out = try? JSONSerialization.data(
+            withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]
+        ) else { return }
+        // .atomic 옵션이 내부적으로 tmp 작성 → rename 처리해 race 안전.
+        try? out.write(to: url, options: .atomic)
+    }
+
+    private static func isoNow() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: Date())
+    }
+
+    func session(id: String) -> SessionState? {
+        sessions.first(where: { $0.id == id })
+    }
+}
