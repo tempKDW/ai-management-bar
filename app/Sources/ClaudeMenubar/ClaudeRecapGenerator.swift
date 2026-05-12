@@ -206,6 +206,20 @@ final class ClaudeRecapGenerator {
 
     // MARK: - subprocess
 
+    /// Reference-type Data sink so the `readabilityHandler` (which Swift treats
+    /// as `@Sendable`) can append without capturing a `var`.
+    private final class DataSink: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buffer = Data()
+        func append(_ chunk: Data) {
+            lock.lock(); buffer.append(chunk); lock.unlock()
+        }
+        func snapshot() -> Data {
+            lock.lock(); defer { lock.unlock() }
+            return buffer
+        }
+    }
+
     private func runClaude(claudePath: String, system: String, stdin: String) async -> String? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: claudePath)
@@ -221,9 +235,10 @@ final class ClaudeRecapGenerator {
         p.standardOutput = stdoutPipe
         p.standardError = FileHandle.nullDevice
 
-        // drain stdout asynchronously to avoid pipe buffer deadlock.
-        var collected = Data()
-        let lock = NSLock()
+        // Drain stdout asynchronously to avoid pipe buffer deadlock.
+        // Use a reference-type sink because the handler is a @Sendable closure
+        // (capturing a var Data would violate Swift concurrency rules).
+        let sink = DataSink()
         let group = DispatchGroup()
         group.enter()
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -232,7 +247,7 @@ final class ClaudeRecapGenerator {
                 handle.readabilityHandler = nil
                 group.leave()
             } else {
-                lock.lock(); collected.append(chunk); lock.unlock()
+                sink.append(chunk)
             }
         }
 
@@ -259,7 +274,7 @@ final class ClaudeRecapGenerator {
             NSLog("[recap] claude exit %d", p.terminationStatus)
             return nil
         }
-        return String(data: collected, encoding: .utf8)
+        return String(data: sink.snapshot(), encoding: .utf8)
     }
 
     // MARK: - claude binary resolution

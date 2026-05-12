@@ -9,7 +9,7 @@ final class SessionStore: ObservableObject {
     private let dirURL: URL
     private var dispatchSource: DispatchSourceFileSystemObject?
     private var dirFD: Int32 = -1
-    private var pollTimer: Timer?
+    private var pollTask: Task<Void, Never>?
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -23,12 +23,16 @@ final class SessionStore: ObservableObject {
         runDiscovery()
         triggerRecaps()
         // Lightweight poll to catch in-file updates and to bootstrap sessions
-        // started before the menubar app launched.
-        self.pollTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.reload()
-                self?.runDiscovery()
-                self?.triggerRecaps()
+        // started before the menubar app launched. We use a MainActor Task
+        // sleep-loop (instead of Timer) so the weak-self capture is async-safe
+        // and survives Swift 6 strict concurrency.
+        self.pollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard let self else { return }
+                self.reload()
+                self.runDiscovery()
+                self.triggerRecaps()
             }
         }
     }
@@ -50,7 +54,7 @@ final class SessionStore: ObservableObject {
     deinit {
         dispatchSource?.cancel()
         if dirFD >= 0 { close(dirFD) }
-        pollTimer?.invalidate()
+        pollTask?.cancel()
     }
 
     private func startWatching() {
