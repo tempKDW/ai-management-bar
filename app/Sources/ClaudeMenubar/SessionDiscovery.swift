@@ -83,21 +83,25 @@ enum SessionDiscovery {
     private struct ProcInfo { let pid: Int; let tty: String }
 
     private static func listClaudeProcesses() -> [ProcInfo] {
-        let (out, _) = run(["ps", "-ax", "-o", "pid=,tty=,user=,comm="])
+        let (out, _) = run(["ps", "-ax", "-o", "pid=,ppid=,tty=,user=,comm="])
         let me = NSUserName()
+        let ourPid = ProcessInfo.processInfo.processIdentifier
         var procs: [ProcInfo] = []
         for raw in out.split(separator: "\n") {
-            // Columns are space-padded; trim and split on whitespace runs.
+            // Columns: pid, ppid, tty, user, comm  (space-padded)
             let line = raw.trimmingCharacters(in: .whitespaces)
             let parts = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
-            guard parts.count >= 4,
+            guard parts.count >= 5,
                   let pid = Int(parts[0]),
-                  String(parts[2]) == me else { continue }
+                  let ppid = Int(parts[1]),
+                  String(parts[3]) == me else { continue }
+            // Skip processes spawned by ourselves (recap subprocess).
+            if ppid == Int(ourPid) { continue }
             // comm 은 보통 "claude" (절대경로 없이 basename). 안전을 위해 basename 비교.
-            let comm = (parts.dropFirst(3).joined(separator: " ") as NSString)
+            let comm = (parts.dropFirst(4).joined(separator: " ") as NSString)
             let basename = (comm.lastPathComponent as String)
             guard basename == "claude" else { continue }
-            procs.append(ProcInfo(pid: pid, tty: String(parts[1])))
+            procs.append(ProcInfo(pid: pid, tty: String(parts[2])))
         }
         return procs
     }

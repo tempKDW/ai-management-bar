@@ -19,20 +19,23 @@ final class ClaudeRecapGenerator {
     private var cachedClaudePath: String?
 
     /// 트리거 조건을 검사하고 만족 시 background generate.
+    /// `force == true` 면 AFK 5분·hash 일치 가드 모두 건너뜁니다 (Refresh 버튼 용).
     @MainActor
-    func generateIfNeeded(for session: SessionState, store: SessionStore) {
+    func generateIfNeeded(for session: SessionState, store: SessionStore, force: Bool = false) {
         guard let transcriptPath = session.transcriptPath,
               FileManager.default.fileExists(atPath: transcriptPath) else {
             return
         }
-        // AFK 5분 확인
-        guard let mtime = mtime(of: transcriptPath),
-              Date().timeIntervalSince(mtime) >= Self.afkThreshold else {
-            return
+        if !force {
+            // AFK 5분 확인
+            guard let mtime = mtime(of: transcriptPath),
+                  Date().timeIntervalSince(mtime) >= Self.afkThreshold else {
+                return
+            }
         }
-        // hash 비교 + in-flight 검사
+        // hash (force 여도 캐시 키로는 필요)
         guard let hash = hashFile(path: transcriptPath) else { return }
-        if session.claudeRecap?.transcriptHash == hash { return }
+        if !force, session.claudeRecap?.transcriptHash == hash { return }
 
         let sid = session.id
         lock.lock()
@@ -207,6 +210,11 @@ final class ClaudeRecapGenerator {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: claudePath)
         p.arguments = ["-p", "--output-format", "text", "--model", "haiku", "--system-prompt", system]
+        // hook.py 가 spawn 된 claude 의 lifecycle event 를 무시하도록 env 마커 주입.
+        // 부모 환경을 inherit 하므로 PATH 등 시스템 변수도 함께 전달.
+        var env = ProcessInfo.processInfo.environment
+        env["CLAUDE_MENUBAR_INTERNAL"] = "1"
+        p.environment = env
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
         p.standardInput = stdinPipe

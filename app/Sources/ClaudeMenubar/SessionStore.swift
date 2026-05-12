@@ -39,6 +39,14 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Refresh 버튼용. AFK·hash 가드 우회하고 모든 세션 recap 즉시 재생성.
+    func forceRecapAll() {
+        reload()
+        for s in sessions {
+            ClaudeRecapGenerator.shared.generateIfNeeded(for: s, store: self, force: true)
+        }
+    }
+
     deinit {
         dispatchSource?.cancel()
         if dirFD >= 0 { close(dirFD) }
@@ -88,8 +96,9 @@ final class SessionStore: ObservableObject {
             }
             loaded.append(s)
         }
-        // Sort: most recently active first (regardless of state)
-        loaded.sort { $0.updatedAt > $1.updatedAt }
+        // Sort by pid desc (immutable per session). Avoids row reordering whenever
+        // a session's transcript ticks or its recap finishes generating.
+        loaded.sort { ($0.pid ?? 0) > ($1.pid ?? 0) }
         self.sessions = loaded
     }
 

@@ -127,6 +127,12 @@ def extract_last_assistant(transcript_path: str | None) -> str | None:
 
 
 def main() -> None:
+    # 메뉴바 앱이 자체적으로 claude CLI 를 subprocess 로 호출할 때 (recap 용)
+    # 그 spawn 한 claude 의 lifecycle hook 도 발화합니다. 그것은 사용자 세션이
+    # 아니므로 즉시 종료해 state 파일을 만들지 않습니다.
+    if os.environ.get("CLAUDE_MENUBAR_INTERNAL") == "1":
+        sys.exit(0)
+
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     raw = sys.stdin.read()

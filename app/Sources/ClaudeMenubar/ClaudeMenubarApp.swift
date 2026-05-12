@@ -76,11 +76,17 @@ struct MenuContent: View {
             Divider()
 
             if store.sessions.isEmpty {
-                Text("활성 세션 없음")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                VStack(spacing: 6) {
+                    Text("활성 세션 없음")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text("iTerm2 탭에서 Claude Code 를 띄우면\n여기에 자동으로 나타납니다.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -96,7 +102,7 @@ struct MenuContent: View {
             Divider()
 
             HStack(spacing: 16) {
-                Button("Refresh") { store.reload() }
+                Button("Refresh") { store.forceRecapAll() }
                     .buttonStyle(.plain)
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }

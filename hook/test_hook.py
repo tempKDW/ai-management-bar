@@ -156,6 +156,16 @@ class HookTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0)
 
+    def test_internal_env_marker_silent_exits(self):
+        rc = run_hook({
+            "hook_event_name": "SessionStart",
+            "session_id": self.sid,
+            "cwd": str(self.home),
+        }, self.home, {"CLAUDE_MENUBAR_INTERNAL": "1"})
+        self.assertEqual(rc, 0)
+        # state file MUST NOT be created when the marker is present
+        self.assertIsNone(read_state(self.home, self.sid))
+
     def test_long_prompt_truncated(self):
         run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
                   "cwd": str(self.home)}, self.home)
