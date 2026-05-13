@@ -78,6 +78,7 @@ struct ClaudeRecap: Codable, Equatable {
 struct SessionState: Codable, Identifiable, Equatable {
     let claudeSessionID: String
     let itermSessionID: String?
+    let terminalProgram: String?
     let cwd: String
     let cwdDisplay: String
     let branch: String?
@@ -102,6 +103,7 @@ struct SessionState: Codable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         case claudeSessionID  = "claude_session_id"
         case itermSessionID   = "iterm_session_id"
+        case terminalProgram  = "terminal_program"
         case cwd
         case cwdDisplay       = "cwd_display"
         case branch
@@ -124,6 +126,7 @@ struct SessionState: Codable, Identifiable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.claudeSessionID = try c.decode(String.self, forKey: .claudeSessionID)
         self.itermSessionID  = try? c.decodeIfPresent(String.self, forKey: .itermSessionID)
+        self.terminalProgram = try? c.decodeIfPresent(String.self, forKey: .terminalProgram)
         self.cwd             = (try? c.decode(String.self, forKey: .cwd)) ?? ""
         self.cwdDisplay      = (try? c.decode(String.self, forKey: .cwdDisplay)) ?? ""
         self.branch          = try? c.decodeIfPresent(String.self, forKey: .branch)

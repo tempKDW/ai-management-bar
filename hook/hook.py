@@ -172,6 +172,14 @@ def main() -> None:
     if iterm:
         state["iterm_session_id"] = iterm
 
+    # TERM_PROGRAM 으로 어느 터미널 emulator 가 띄운 claude 인지 식별.
+    # 메뉴바 row click / banner click 시 점프 분기에 사용됨 (iTerm 은 탭 단위,
+    # VSCode 는 cwd workspace window 단위). 미지원 터미널은 nil 로 두면 graceful
+    # no-op.
+    term_program = os.environ.get("TERM_PROGRAM")
+    if term_program:
+        state["terminal_program"] = term_program
+
     if event == "SessionStart":
         # 세션 시작 직후엔 사용자 prompt 대기 중 — running 으로 표시하면
         # "AI 가 작업 중" 으로 오해. idle 이 정확.

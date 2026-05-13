@@ -4,6 +4,7 @@ import Foundation
 struct DiscoveredSession {
     let claudeSessionID: String
     let itermSessionID: String?
+    let terminalProgram: String?
     let cwd: String
     let branch: String?
     let transcriptPath: String
@@ -65,9 +66,11 @@ enum SessionDiscovery {
             }
             claimed.insert(pick.sessionId)
             let iterm = envVar(pid: p.pid, name: "ITERM_SESSION_ID")
+            let termProgram = envVar(pid: p.pid, name: "TERM_PROGRAM")
             results.append(DiscoveredSession(
                 claudeSessionID: pick.sessionId,
                 itermSessionID: iterm,
+                terminalProgram: termProgram,
                 cwd: cwd,
                 branch: pick.branch,
                 transcriptPath: pick.path,

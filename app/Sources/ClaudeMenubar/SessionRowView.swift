@@ -50,6 +50,13 @@ struct SessionRowView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+                        if let badge = TerminalKind.from(program: session.terminalProgram).displayName {
+                            Text("·").foregroundStyle(.secondary)
+                            Text(badge)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                         Spacer()
                         Text(session.state.label)
                             .font(.system(size: 10, weight: .semibold))
@@ -95,11 +102,7 @@ struct SessionRowView: View {
     }
 
     private func activate() {
-        guard let uid = session.itermSessionID else {
-            NSSound.beep()
-            return
-        }
-        if let err = ITermActivator.activate(sessionUniqueID: uid) {
+        if let err = TerminalActivator.activate(session: session) {
             NSLog("[claude-menubar] activate failed: %@", err)
             NSSound.beep()
         }

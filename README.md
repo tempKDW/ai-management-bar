@@ -197,7 +197,7 @@ If the menubar icon disappears, the recap stalls, or anything else looks wrong, 
 
 ## Intentionally out of scope (YAGNI)
 
-- Non-iTerm2 terminals
+- Non-iTerm2 / non-VSCode terminals (VSCode click-jump is window-level only — VSCode exposes no external API for tab-level focus)
 - A standalone dashboard window
 - Remote sessions
 - Cross-session linking

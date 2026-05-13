@@ -182,6 +182,7 @@ final class SessionStore: ObservableObject {
             ]
             if let b = d.branch { dict["branch"] = b }
             if let it = d.itermSessionID { dict["iterm_session_id"] = it }
+            if let tp = d.terminalProgram { dict["terminal_program"] = tp }
             guard let data = try? JSONSerialization.data(
                 withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]
             ) else { continue }
