@@ -29,9 +29,11 @@ enum TerminalKind {
 ///
 /// 분기:
 ///   - iTerm.app  → `ITermActivator` (AppleScript unique id 매칭, 탭 단위)
-///   - vscode     → `open -b com.microsoft.VSCode <cwd>` (workspace window 단위.
-///                  VSCode 가 stable terminal-instance id 를 외부에 노출하지
-///                  않아 탭 단위 점프는 불가능)
+///   - vscode     → 비활성 (no-op). VSCode 는 stable terminal-instance id 를
+///                  외부에 노출하지 않고, `open -b com.microsoft.VSCode <cwd>`
+///                  는 cwd 가 VSCode workspace 와 정확히 일치하지 않으면 새
+///                  창을 띄워 사용자 작업 흐름을 망치므로 점프 자체를 뺀다.
+///                  배지는 표시되어 어느 터미널에서 띄운 세션인지만 알린다.
 ///   - 그 외      → "unsupported" 반환, caller 가 beep 등으로 처리
 enum TerminalActivator {
     @discardableResult
@@ -43,29 +45,15 @@ enum TerminalActivator {
             }
             return ITermActivator.activate(sessionUniqueID: uid)
         case .vscode:
-            return openVSCode(cwd: session.cwd)
+            return "vscode jump disabled (no stable terminal id)"
         case .unsupported:
-            return "unsupported terminal: \(session.terminalProgram ?? "nil")"
-        }
-    }
-
-    /// `open -b com.microsoft.VSCode <cwd>` 로 cwd 가 열린 VSCode workspace
-    /// window 를 frontmost 로 가져온다 (이미 열려 있으면 activate, 없으면 새
-    /// window). VSCode 미설치 환경에서는 open 이 non-zero exit → 에러 반환,
-    /// caller 가 graceful 처리.
-    static func openVSCode(cwd: String) -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        p.arguments = ["-b", "com.microsoft.VSCode", cwd]
-        do {
-            try p.run()
-            p.waitUntilExit()
-            if p.terminationStatus != 0 {
-                return "open exit \(p.terminationStatus)"
+            // Legacy fallback: terminal_program 이 박히기 전 (옛 hook) 상태
+            // 파일은 iterm_session_id 만 있을 수 있다. 그 경우엔 iTerm 으로
+            // 점프 시도해 회귀 방지.
+            if let uid = session.itermSessionID, !uid.isEmpty {
+                return ITermActivator.activate(sessionUniqueID: uid)
             }
-            return nil
-        } catch {
-            return "open spawn failed: \(error)"
+            return "unsupported terminal: \(session.terminalProgram ?? "nil")"
         }
     }
 }

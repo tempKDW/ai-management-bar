@@ -50,13 +50,7 @@ struct SessionRowView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
-                        if let badge = TerminalKind.from(program: session.terminalProgram).displayName {
-                            Text("·").foregroundStyle(.secondary)
-                            Text(badge)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
+                        terminalBadge
                         Spacer()
                         Text(session.state.label)
                             .font(.system(size: 10, weight: .semibold))
@@ -89,6 +83,32 @@ struct SessionRowView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .onHover { hovering = $0 }
+    }
+
+    /// 작은 chip 모양 배지. iTerm 은 녹색, VSCode 는 파랑 — brand 인식 + 짙은
+    /// foreground + 옅은 background 로 cwd 가 길어도 시인성 유지. unsupported
+    /// 터미널은 EmptyView 로 자리 차지 안 함.
+    @ViewBuilder
+    private var terminalBadge: some View {
+        let kind = TerminalKind.from(program: session.terminalProgram)
+        if let label = kind.displayName {
+            let tint = terminalTint(kind)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(tint)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(tint.opacity(0.15)))
+                .fixedSize()
+        }
+    }
+
+    private func terminalTint(_ kind: TerminalKind) -> Color {
+        switch kind {
+        case .iterm:       return .green
+        case .vscode:      return .blue
+        case .unsupported: return .secondary
+        }
     }
 
     private var stateColor: Color {

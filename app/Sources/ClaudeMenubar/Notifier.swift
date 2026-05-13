@@ -47,16 +47,15 @@ enum Notifier {
             "--sound", "default",
         ]
         // banner click 시 helper 가 어느 터미널로 점프할지 결정하는 식별자.
-        // iTerm 은 탭 단위 (unique id), VSCode 는 cwd 단위 (workspace window).
-        // 미지원 터미널은 식별자 미전달 → click 시 silent no-op (graceful).
+        // iTerm 만 탭 단위 jump 지원 — VSCode 는 stable terminal id 가 없어
+        // 점프를 비활성화했다 (TerminalActivator 의 .vscode 분기 참고).
+        // 미지원/비활성 터미널은 식별자 미전달 → click 시 silent no-op.
         switch TerminalKind.from(program: session.terminalProgram) {
         case .iterm:
             if let it = session.itermSessionID, !it.isEmpty {
                 argv.append(contentsOf: ["--iterm-session", it])
             }
-        case .vscode:
-            argv.append(contentsOf: ["--vscode-cwd", session.cwd])
-        case .unsupported:
+        case .vscode, .unsupported:
             break
         }
 

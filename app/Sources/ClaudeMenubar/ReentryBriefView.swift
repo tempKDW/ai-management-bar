@@ -103,13 +103,19 @@ struct ReentryBriefView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                activate()
-            } label: {
-                Label(t(.itermTab), systemImage: "arrow.up.right.square")
-                    .font(.system(size: 10))
+            // iterm_session_id 가 있을 때만 탭 점프 버튼 노출. VSCode 통합
+            // 터미널은 ITERM_SESSION_ID 가 없어 자동으로 안 보임. 옛 hook 으로
+            // 만들어진 상태 파일 (terminal_program=None 이지만 iterm_session_id
+            // 는 있음) 도 정상 노출되도록 program 보단 id 기준으로 판정.
+            if let uid = session.itermSessionID, !uid.isEmpty {
+                Button {
+                    activate()
+                } label: {
+                    Label(t(.itermTab), systemImage: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Spacer()
         }

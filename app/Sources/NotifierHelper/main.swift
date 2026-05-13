@@ -19,7 +19,6 @@ struct Args {
     var message: String?
     var sound: String?
     var itermSession: String?
-    var vscodeCwd: String?
 }
 
 func parseArgs() -> Args {
@@ -33,7 +32,6 @@ func parseArgs() -> Args {
         case "--message":        i += 1; if i < argv.count { a.message = argv[i] }
         case "--sound":          i += 1; if i < argv.count { a.sound = argv[i] }
         case "--iterm-session":  i += 1; if i < argv.count { a.itermSession = argv[i] }
-        case "--vscode-cwd":     i += 1; if i < argv.count { a.vscodeCwd = argv[i] }
         default: break
         }
         i += 1
@@ -73,8 +71,6 @@ func runSend(_ args: Args) -> Never {
             let userInfo = response.notification.request.content.userInfo
             if let sid = userInfo["iterm_session_id"] as? String, !sid.isEmpty {
                 _ = activateITerm(sessionUniqueID: sid)
-            } else if let cwd = userInfo["vscode_cwd"] as? String, !cwd.isEmpty {
-                _ = activateVSCode(cwd: cwd)
             }
             completionHandler()
         }
@@ -98,12 +94,10 @@ func runSend(_ args: Args) -> Never {
         if let s = args.sound {
             content.sound = (s == "default") ? .default : UNNotificationSound(named: UNNotificationSoundName(s))
         }
-        // banner click 시 receive 모드 helper 가 받아 적절한 터미널로 점프.
-        // iTerm 은 탭 단위 (unique id), VSCode 는 cwd workspace window 단위.
-        var userInfo: [String: Any] = [:]
-        if let it = args.itermSession { userInfo["iterm_session_id"] = it }
-        if let cwd = args.vscodeCwd   { userInfo["vscode_cwd"] = cwd }
-        if !userInfo.isEmpty { content.userInfo = userInfo }
+        // banner click 시 receive 모드 helper 가 받아 iTerm 탭으로 점프.
+        if let it = args.itermSession {
+            content.userInfo = ["iterm_session_id": it]
+        }
         let request = UNNotificationRequest(
             identifier: UUID().uuidString,
             content: content,
@@ -147,8 +141,6 @@ final class ReceiveDelegate: NSObject, NSApplicationDelegate, UNUserNotification
         let userInfo = response.notification.request.content.userInfo
         if let sid = userInfo["iterm_session_id"] as? String, !sid.isEmpty {
             _ = activateITerm(sessionUniqueID: sid)
-        } else if let cwd = userInfo["vscode_cwd"] as? String, !cwd.isEmpty {
-            _ = activateVSCode(cwd: cwd)
         }
         completionHandler()
         // 처리 끝나면 즉시 exit (helper process 누수 방지).
@@ -206,29 +198,6 @@ func activateITerm(sessionUniqueID: String) -> (ok: Bool, returnString: String, 
     }
     let str = result.stringValue ?? ""
     return (str.hasPrefix("selected:"), str, nil)
-}
-
-/// `TerminalActivator.openVSCode(cwd:)` 의 helper-local 사본. helper 는 별도
-/// SPM target 이라 직접 import 불가 — Phase 12 의 `activateITerm` 와 동일 패턴.
-///
-/// `/usr/bin/open -b com.microsoft.VSCode <cwd>` 를 spawn 해 cwd 가 열린 VSCode
-/// workspace window 를 frontmost 로 가져온다. VSCode 가 stable terminal-instance
-/// id 를 외부에 노출하지 않아 탭 단위 점프는 불가능, workspace window 단위가 최선.
-@discardableResult
-func activateVSCode(cwd: String) -> String? {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    p.arguments = ["-b", "com.microsoft.VSCode", cwd]
-    do {
-        try p.run()
-        p.waitUntilExit()
-        if p.terminationStatus != 0 {
-            return "open exit \(p.terminationStatus)"
-        }
-        return nil
-    } catch {
-        return "open spawn failed: \(error)"
-    }
 }
 
 // MARK: - entry
