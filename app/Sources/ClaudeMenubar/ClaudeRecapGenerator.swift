@@ -18,6 +18,12 @@ final class ClaudeRecapGenerator {
     private var inFlight: Set<String> = []   // sessionID 들
     private var cachedClaudePath: String?
 
+    /// 외부 (SessionStore Refresh) 에서 완료 감지용으로 사용.
+    func hasInFlight() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return !inFlight.isEmpty
+    }
+
     /// 트리거 조건을 검사하고 만족 시 background generate.
     /// `force == true` 면 AFK 5분·hash 일치 가드 모두 건너뜁니다 (Refresh 버튼 용).
     @MainActor

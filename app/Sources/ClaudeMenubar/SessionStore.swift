@@ -5,6 +5,9 @@ import Combine
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [SessionState] = []
+    /// Refresh 버튼 클릭 시 true → 모든 recap generation 완료 후 false.
+    /// UI 가 이 값을 보고 버튼을 spinner 로 바꾸고 disable.
+    @Published private(set) var isRefreshing: Bool = false
 
     private let dirURL: URL
     private var dispatchSource: DispatchSourceFileSystemObject?
@@ -44,10 +47,25 @@ final class SessionStore: ObservableObject {
     }
 
     /// Refresh 버튼용. AFK·hash 가드 우회하고 모든 세션 recap 즉시 재생성.
+    /// 호출 동안 `isRefreshing = true` 로 UI 가 spinner/disabled 상태 유지.
     func forceRecapAll() {
+        if isRefreshing { return }   // 이미 진행 중이면 무시 (중복 호출 방지)
         reload()
+        isRefreshing = true
         for s in sessions {
             ClaudeRecapGenerator.shared.generateIfNeeded(for: s, store: self, force: true)
+        }
+        // generate 들은 background Task 라 동기적으로 완료를 기다릴 수 없음.
+        // ClaudeRecapGenerator 의 in-flight 가 다 빠질 때까지 폴링.
+        Task { @MainActor [weak self] in
+            // 첫 spawn 들이 모두 inFlight 에 등록될 시간을 약간 줌.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            // 최대 60초 안전망 (claude CLI 호출이 5-10초 × 세션수).
+            let deadline = Date().addingTimeInterval(60)
+            while ClaudeRecapGenerator.shared.hasInFlight() && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            self?.isRefreshing = false
         }
     }
 

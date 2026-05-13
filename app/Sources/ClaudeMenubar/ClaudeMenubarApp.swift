@@ -103,8 +103,19 @@ struct MenuContent: View {
             Divider()
 
             HStack(spacing: 16) {
-                Button("Refresh") { store.forceRecapAll() }
-                    .buttonStyle(.plain)
+                if store.isRefreshing {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 14, height: 14)
+                        Text("Refreshing…")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button("Refresh") { store.forceRecapAll() }
+                        .buttonStyle(.plain)
+                        .disabled(store.isRefreshing)
+                }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
                     .buttonStyle(.plain)
