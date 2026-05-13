@@ -13,6 +13,10 @@ final class SessionStore: ObservableObject {
     private var dispatchSource: DispatchSourceFileSystemObject?
     private var dirFD: Int32 = -1
     private var pollTask: Task<Void, Never>?
+    /// 알림 발화 대상 검출용 — 이전 reload 의 session→state 매핑.
+    private var prevStates: [String: SessionStatus] = [:]
+    /// 앱 시작 직후 첫 reload 는 알림 skip (기존 waiting 세션 spam 방지).
+    private var firstReloadDone = false
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -121,6 +125,20 @@ final class SessionStore: ObservableObject {
         // Sort by pid desc (immutable per session). Avoids row reordering whenever
         // a session's transcript ticks or its recap finishes generating.
         loaded.sort { ($0.pid ?? 0) > ($1.pid ?? 0) }
+
+        // Detect transitions into `waiting` (action needed) and notify the user.
+        // 첫 reload 는 skip — 부팅 직후 이미 waiting 인 세션은 사용자가 이미 인지.
+        if firstReloadDone {
+            for new in loaded where new.state == .waiting {
+                let prev = prevStates[new.id]
+                if prev != .waiting {
+                    Notifier.shared.send(for: new)
+                }
+            }
+        }
+        prevStates = Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0.state) })
+        firstReloadDone = true
+
         self.sessions = loaded
     }
 

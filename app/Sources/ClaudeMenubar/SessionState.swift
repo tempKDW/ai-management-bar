@@ -10,7 +10,7 @@ enum SessionStatus: String, Codable, Equatable {
     var icon: String {
         switch self {
         case .running: return "🟢"
-        case .waiting: return "🟡"
+        case .waiting: return "🔔"   // action needed — 시인성 강조 (Phase 10)
         case .idle:    return "🔵"
         case .done:    return "✅"
         case .unknown: return "⚪️"
