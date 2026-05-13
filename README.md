@@ -82,6 +82,8 @@ GitHub Actions 가 매 main push 마다 macOS `.app` bundle 을 자동으로 빌
    - 방법 A: Finder 에서 `ClaudeMenubar.app` 우클릭 → **열기** → 경고창의 "열기" 다시 클릭
    - 방법 B: 터미널에서 `xattr -dr com.apple.quarantine /Applications/ClaudeMenubar.app` 한 줄
 4. **iTerm2 자동화 권한** — 처음 행 클릭 시 macOS 가 권한 prompt → 허용
+5. **알림 권한** (waiting 전이 banner) — 첫 waiting 검출 시 동봉된 `NotifierHelper.app` 이 알림 권한 prompt 를 한 번 띄움 → 허용. 거부해도 메뉴바 아이콘 강조 + 행 🔔 표시는 동작.
+   - **Focus 모드** 가 켜져 있으면 banner 가 막힙니다. Settings → Focus → 해당 모드의 "Allowed Apps" 에 `AI Management Bar Notifier` 추가하면 통과.
 
 요구사항: macOS 13+ · `claude` CLI 가 `PATH` 에 있어야 자동 recap 동작 (`which claude` 확인).
 
@@ -132,17 +134,22 @@ open dist/ClaudeMenubar.app
 │   └── test_transcript_signals.py
 ├── app/                        ← Swift Package Manager
 │   ├── Package.swift
-│   └── Sources/ClaudeMenubar/
-│       ├── ClaudeMenubarApp.swift    ← @main · MenuBarExtra
-│       ├── SessionState.swift
-│       ├── SessionStore.swift        ← FSEvents · polling · patch
-│       ├── SessionRowView.swift      ← row · chevron · expand
-│       ├── ReentryBriefView.swift    ← brief 패널
-│       ├── ITermActivator.swift      ← osascript iTerm2 탭 활성화
-│       ├── ClaudeRecapGenerator.swift ← AFK 자동 recap
-│       ├── HookInstaller.swift       ← settings.json 안전 머지
-│       ├── SessionDiscovery.swift    ← 앱 시작 전 떠 있던 세션 발견
-│       └── EmbeddedHookSource.swift  ← hook 임베드 사본 (앱 단독 동작용)
+│   ├── Info.plist
+│   ├── NotifierHelper-Info.plist    ← helper bundle Info.plist
+│   └── Sources/
+│       ├── ClaudeMenubar/
+│       │   ├── ClaudeMenubarApp.swift     ← @main · MenuBarExtra
+│       │   ├── SessionState.swift
+│       │   ├── SessionStore.swift         ← FSEvents · polling · patch
+│       │   ├── SessionRowView.swift       ← row · chevron · expand
+│       │   ├── ReentryBriefView.swift     ← brief 패널
+│       │   ├── ITermActivator.swift       ← osascript iTerm2 탭 활성화
+│       │   ├── ClaudeRecapGenerator.swift ← AFK 자동 recap
+│       │   ├── HookInstaller.swift        ← settings.json 안전 머지
+│       │   ├── SessionDiscovery.swift     ← 앱 시작 전 떠 있던 세션 발견
+│       │   ├── Notifier.swift             ← waiting 전이 banner (helper launch)
+│       │   └── EmbeddedHookSource.swift   ← hook 임베드 사본 (앱 단독 동작용)
+│       └── NotifierHelper/main.swift      ← UN banner sender (자체 bundleID)
 └── scripts/
     └── install.sh              ← CLI 로 hook 등록 (선택)
 ```

@@ -130,8 +130,7 @@ final class SessionStore: ObservableObject {
         // 첫 reload 는 skip — 부팅 직후 이미 waiting 인 세션은 사용자가 이미 인지.
         if firstReloadDone {
             for new in loaded where new.state == .waiting {
-                let prev = prevStates[new.id]
-                if prev != .waiting {
+                if prevStates[new.id] != .waiting {
                     Notifier.send(for: new)
                 }
             }

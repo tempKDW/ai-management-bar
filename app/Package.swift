@@ -6,11 +6,16 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "ClaudeMenubar", targets: ["ClaudeMenubar"]),
+        .executable(name: "NotifierHelper", targets: ["NotifierHelper"]),
     ],
     targets: [
         .executableTarget(
             name: "ClaudeMenubar",
             path: "Sources/ClaudeMenubar"
+        ),
+        .executableTarget(
+            name: "NotifierHelper",
+            path: "Sources/NotifierHelper"
         ),
     ]
 )

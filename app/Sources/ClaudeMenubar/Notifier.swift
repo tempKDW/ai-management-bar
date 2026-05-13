@@ -1,25 +1,24 @@
 import Foundation
 import AppKit
 
-/// 메뉴바 앱 (`LSUIElement=true`, 미서명) 에서는 `UNUserNotificationCenter` 권한
-/// prompt 가 silently dropped 되는 macOS 이슈가 있다. 우회를 위해
-/// `osascript "display notification"` 으로 시스템 알림을 띄운다 — Apple Events
-/// 권한은 이미 받아둔 상태(iTerm2 자동화) 라 추가 권한 prompt 없음.
+/// 메뉴바 앱 (`LSUIElement=true`, 미서명) 에서 직접 UN 호출 / AppleScript
+/// `display notification` 으로는 banner 가 안정적으로 노출되지 않는다 (권한
+/// prompt silently dropped, deprecated NSUserNotification 으로의 fallback 도
+/// macOS 26 에서는 no-op).
 ///
-/// trade-off: click action (알림 누르면 iTerm 점프) 은 osascript 알림에서 지원
-/// 안 됨. 사용자는 알림을 보고 메뉴바를 직접 열어 🔔 행을 클릭해 iTerm 으로
-/// 이동한다.
+/// 해결: 자체 bundleID 를 가진 NotifierHelper.app 을 ad-hoc 서명해 동봉하고,
+/// `NSWorkspace.openApplication` 으로 launch 한다. LaunchServices 경유라야
+/// helper 의 신원으로 process 가 떠 UN 권한 + Notification Center 등록이 정상
+/// 동작한다 (`Process` 로 binary 직접 호출하면 책임 앱이 ClaudeMenubar 로
+/// 잡혀 helper 등록이 누락된다).
 enum Notifier {
     private static let lock = NSLock()
     private static var lastSent: [String: Date] = [:]
     /// 같은 세션에서 짧은 시간 안 반복되는 waiting 전이는 한 번만 알림.
     private static let throttle: TimeInterval = 5
 
-    /// 호환성 entry point — UN* 시절에는 권한 prompt 가 있었지만 osascript 경로는
-    /// setup 없이 동작한다. App init 에서 부르되 실제 동작은 없음.
-    static func setup() {
-        // intentionally empty — `display notification` requires no setup.
-    }
+    /// 호환성 entry point — helper 경로는 setup 없이 동작한다.
+    static func setup() {}
 
     static func send(for session: SessionState) {
         // throttle
@@ -37,35 +36,47 @@ enum Notifier {
             ? session.currentTask!
             : "Action required"
 
-        let script = """
-        display notification "\(escape(body))" with title "\(escape(title))" sound name "default"
-        """
-
-        // In-process NSAppleScript can be silently dropped by macOS for
-        // LSUIElement + unsigned bundles. Spawning /usr/bin/osascript as a
-        // subprocess routes the notification through the binary's own
-        // identity (script-runner) which posts reliably.
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", script]
-        p.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do {
-            try p.run()
-        } catch {
-            NSLog("[notify] spawn failed: %@", String(describing: error))
+        guard let helperApp = helperAppURL() else {
+            NSLog("[notify] NotifierHelper.app not found in bundle")
             return
         }
-        // Detached — banner is fire-and-forget; we don't block here.
-        NSLog("[notify] sent for %@", session.id)
+
+        let config = NSWorkspace.OpenConfiguration()
+        config.arguments = [
+            "--title", title,
+            "--message", body,
+            "--sound", "default",
+        ]
+        config.activates = false
+        NSWorkspace.shared.openApplication(at: helperApp, configuration: config) { _, err in
+            if let err = err {
+                NSLog("[notify] helper launch failed: %@", String(describing: err))
+            }
+        }
     }
 
-    /// AppleScript string literal 안에 들어가는 사용자 입력 escape.
-    private static func escape(_ s: String) -> String {
-        return s
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: " ")
+    /// Bundle.main/Contents/Helpers/NotifierHelper.app. `swift run` 처럼 .app
+    /// 밖에서 실행될 때 (개발 모드) 는 dist/ClaudeMenubar.app 의 helper 를
+    /// fallback 으로 사용 — helper 는 .app bundle 형태여야 LaunchServices 가
+    /// 자체 bundleID 로 launch 한다.
+    private static func helperAppURL() -> URL? {
+        let mainURL = Bundle.main.bundleURL
+        let inBundle = mainURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Helpers")
+            .appendingPathComponent("NotifierHelper.app")
+        if FileManager.default.fileExists(atPath: inBundle.path) {
+            return inBundle
+        }
+        // dev fallback: dist/ 에 빌드된 helper.app
+        let fm = FileManager.default
+        if let cwd = ProcessInfo.processInfo.environment["PWD"] {
+            let candidate = URL(fileURLWithPath: cwd)
+                .appendingPathComponent("dist/ClaudeMenubar.app/Contents/Helpers/NotifierHelper.app")
+            if fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
 }
