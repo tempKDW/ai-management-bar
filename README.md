@@ -184,6 +184,17 @@ diff <(python3 -c "import re; s=open('app/Sources/ClaudeMenubar/EmbeddedHookSour
 
 No diff = in sync (a trailing-newline-only diff is benign).
 
+## Reporting an issue
+
+If the menubar icon disappears, the recap stalls, or anything else looks wrong, please share the following so it can be triaged quickly:
+
+1. **macOS version** — `sw_vers -productVersion`.
+2. **App build identity** — open the menubar dropdown → ⚙ Settings → the small grey line at the bottom (e.g. `v0.1.0 · build a1b2c3d · 2026-05-13`). If the build line shows `local`, mention that.
+3. **What you were doing just before the issue** — sleep/wake, time passed, a specific click, switching network, etc.
+4. **Is the process alive?** — open Activity Monitor and search for `ClaudeMenubar`. If the row exists but the menubar icon is gone, that points to a UI bug; if the row is gone, the process crashed.
+5. **Crash log** — check `~/Library/Logs/DiagnosticReports/` for any file beginning with `ClaudeMenubar` and attach it.
+6. **Session files on disk** — `ls ~/.claude/menubar/sessions/ | wc -l`. Zero is fine on its own, but useful context.
+
 ## Intentionally out of scope (YAGNI)
 
 - Non-iTerm2 terminals

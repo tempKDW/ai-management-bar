@@ -22,19 +22,23 @@ struct ClaudeMenubarApp: App {
         MenuBarExtra {
             MenuContent(store: store)
         } label: {
-            Label {
-                Text(menuTitle)
-            } icon: {
+            // sessions.count == 0 일 때 Label 의 text 가 빈 string 이면 SwiftUI
+            // MenuBarExtra 가 menu bar item 자체를 hide 하는 corner case 가 있다
+            // (Phase 13 incident). 0 명일 때는 icon-only label 로 분기해서 항상
+            // menu bar 에 보이게 한다.
+            if store.sessions.isEmpty {
                 Image(systemName: menuIcon)
                     .foregroundStyle(menuIconColor)
+            } else {
+                Label {
+                    Text("\(store.sessions.count)")
+                } icon: {
+                    Image(systemName: menuIcon)
+                        .foregroundStyle(menuIconColor)
+                }
             }
         }
         .menuBarExtraStyle(.window)
-    }
-
-    private var menuTitle: String {
-        let n = store.sessions.count
-        return n == 0 ? "" : "\(n)"
     }
 
     /// 상태 인식 아이콘 우선순위: waiting (action 필요) > running > idle/done/empty.
@@ -159,38 +163,58 @@ struct MenuContent: View {
     /// Save 누를 때만 (변경 시) recap 재생성이 일어나도록 해서 빠른 picker 토글이
     /// 중복 refresh 를 일으키지 않는다.
     private var settingsPanel: some View {
-        HStack(spacing: 10) {
-            Text(t(.language))
-                .foregroundStyle(.secondary)
-            Picker("", selection: $draftLanguage) {
-                ForEach(AppLanguage.allCases) { lang in
-                    Text(lang.pickerLabel).tag(lang)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Text(t(.language))
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $draftLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.pickerLabel).tag(lang)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 150)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 150)
 
-            Spacer()
+                Spacer()
 
-            Button(t(.close)) {
-                showingSettings = false
-            }
-            .buttonStyle(.plain)
-
-            Button(t(.save)) {
-                let changed = draftLanguage != localizer.preference
-                if changed {
-                    localizer.setPreference(draftLanguage)
-                    store.forceRecapAll()
+                Button(t(.close)) {
+                    showingSettings = false
                 }
-                showingSettings = false
+                .buttonStyle(.plain)
+
+                Button(t(.save)) {
+                    let changed = draftLanguage != localizer.preference
+                    if changed {
+                        localizer.setPreference(draftLanguage)
+                        store.forceRecapAll()
+                    }
+                    showingSettings = false
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            // incident triage 용 build identity. Info.plist 의 BuildCommit /
+            // BuildDate 는 scripts/make-app-bundle.sh 가 박는다 (CI 는 GITHUB_SHA,
+            // 로컬은 git short HEAD, 둘 다 없으면 "local").
+            Text(buildIdentityString)
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
         }
         .font(.system(size: 12))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private var buildIdentityString: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let commit = info["BuildCommit"] as? String ?? "local"
+        // BuildDate 는 ISO8601 — 표시할 때 날짜 부분 (앞 10자) 만 잘라 간결화.
+        let rawDate = info["BuildDate"] as? String ?? ""
+        let date = String(rawDate.prefix(10))
+        return t(.buildIdentity(version: version, commit: commit, date: date.isEmpty ? "—" : date))
     }
 }
 

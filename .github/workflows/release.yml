@@ -22,6 +22,8 @@ jobs:
         run: swift build -c release
 
       - name: Make .app bundle
+        env:
+          BUILD_SHA: ${{ github.sha }}
         run: bash scripts/make-app-bundle.sh
 
       - name: Verify embedded hook source is in sync

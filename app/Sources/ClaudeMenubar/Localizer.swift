@@ -82,6 +82,7 @@ enum L10nKey {
     case language
     case save
     case close
+    case buildIdentity(version: String, commit: String, date: String)
 }
 
 /// 메인 entrypoint. View 에서 `t(.emptyTitle)` 식으로 부른다.
@@ -137,6 +138,7 @@ private func ko(_ key: L10nKey) -> String {
     case .language:                  return "언어"
     case .save:                      return "저장"
     case .close:                     return "닫기"
+    case .buildIdentity(let v, let c, let d): return "v\(v) · build \(c) · \(d)"
     }
 }
 
@@ -168,5 +170,6 @@ private func en(_ key: L10nKey) -> String {
     case .language:                  return "Language"
     case .save:                      return "Save"
     case .close:                     return "Close"
+    case .buildIdentity(let v, let c, let d): return "v\(v) · build \(c) · \(d)"
     }
 }

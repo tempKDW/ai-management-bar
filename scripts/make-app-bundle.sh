@@ -44,6 +44,25 @@ chmod +x "$APP/Contents/MacOS/ClaudeMenubar"
 cp "$PLIST" "$APP/Contents/Info.plist"
 printf 'APPL????' >"$APP/Contents/PkgInfo"
 
+# Build metadata 박기 — incident triage 시 사용자가 받은 빌드의 commit / 빌드
+# 시각을 settings 패널에서 확인 가능. CI 가 BUILD_SHA 를 env 로 주면 그걸 쓰고
+# 없으면 로컬 git short HEAD, 그것도 없으면 "local" 표시.
+SHORT_SHA=""
+if [[ -n "${BUILD_SHA:-}" ]]; then
+    SHORT_SHA="${BUILD_SHA:0:7}"   # CI 가 full SHA 넘김 — 7-char short 으로
+else
+    SHORT_SHA=$(cd "$ROOT" && git rev-parse --short HEAD 2>/dev/null || echo "local")
+fi
+BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+echo "[bundle] metadata commit=$SHORT_SHA date=$BUILD_DATE"
+/usr/libexec/PlistBuddy -c "Add :BuildCommit string $SHORT_SHA" "$APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :BuildCommit $SHORT_SHA" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :BuildDate string $BUILD_DATE" "$APP/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :BuildDate $BUILD_DATE" "$APP/Contents/Info.plist"
+# CFBundleVersion 은 build identifier 로 사용 — Sparkle 등 자동 update 호환성
+# (semantic version 은 CFBundleShortVersionString 에 유지).
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 0.1.0+$SHORT_SHA" "$APP/Contents/Info.plist"
+
 # Helper bundle: NotifierHelper.
 # 메인 앱 (LSUIElement + 미서명) 에서 UNUserNotificationCenter 호출 시 권한 prompt 가
 # silently dropped 되는 macOS 이슈가 있다. helper 를 별도 bundleID 의 .app 으로
