@@ -14,8 +14,8 @@ struct ClaudeMenubarApp: App {
         } catch {
             NSLog("[claude-menubar] hook install failed: %@", String(describing: error))
         }
-        // 권한 요청 발생 시 macOS Notification 으로 알리기 위한 권한 prompt 1회.
-        Notifier.shared.setup()
+        // 권한 요청 발생 시 macOS Notification 으로 알리기 (osascript 우회).
+        Notifier.setup()
     }
 
     var body: some Scene {

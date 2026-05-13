@@ -132,7 +132,7 @@ final class SessionStore: ObservableObject {
             for new in loaded where new.state == .waiting {
                 let prev = prevStates[new.id]
                 if prev != .waiting {
-                    Notifier.shared.send(for: new)
+                    Notifier.send(for: new)
                 }
             }
         }

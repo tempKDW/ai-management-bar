@@ -1,35 +1,27 @@
 import Foundation
-import UserNotifications
+import AppKit
 
-/// macOS 시스템 알림(banner + sound) 으로 waiting 전이를 사용자에게 알린다.
-/// 사용 흐름:
-///   1. 앱 시작 시 `Notifier.shared.setup()` 한 번
-///   2. `SessionStore.reload()` 가 새로 waiting 으로 들어간 세션을 감지하면
-///      `Notifier.shared.send(for: session)` 호출
-///   3. 사용자가 알림 클릭 → delegate 가 iTerm 탭 활성화
-final class Notifier: NSObject, UNUserNotificationCenterDelegate {
-    static let shared = Notifier()
-    private override init() { super.init() }
-
-    private let lock = NSLock()
-    private var lastSent: [String: Date] = [:]
+/// 메뉴바 앱 (`LSUIElement=true`, 미서명) 에서는 `UNUserNotificationCenter` 권한
+/// prompt 가 silently dropped 되는 macOS 이슈가 있다. 우회를 위해
+/// `osascript "display notification"` 으로 시스템 알림을 띄운다 — Apple Events
+/// 권한은 이미 받아둔 상태(iTerm2 자동화) 라 추가 권한 prompt 없음.
+///
+/// trade-off: click action (알림 누르면 iTerm 점프) 은 osascript 알림에서 지원
+/// 안 됨. 사용자는 알림을 보고 메뉴바를 직접 열어 🔔 행을 클릭해 iTerm 으로
+/// 이동한다.
+enum Notifier {
+    private static let lock = NSLock()
+    private static var lastSent: [String: Date] = [:]
     /// 같은 세션에서 짧은 시간 안 반복되는 waiting 전이는 한 번만 알림.
-    private let throttle: TimeInterval = 5
+    private static let throttle: TimeInterval = 5
 
-    /// 앱 시작 시 한 번. 권한 prompt 띄우고 delegate 등록.
-    func setup() {
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error = error {
-                NSLog("[notify] auth error: %@", String(describing: error))
-            } else {
-                NSLog("[notify] auth granted: %@", granted ? "yes" : "no")
-            }
-        }
+    /// 호환성 entry point — UN* 시절에는 권한 prompt 가 있었지만 osascript 경로는
+    /// setup 없이 동작한다. App init 에서 부르되 실제 동작은 없음.
+    static func setup() {
+        // intentionally empty — `display notification` requires no setup.
     }
 
-    func send(for session: SessionState) {
+    static func send(for session: SessionState) {
         // throttle
         lock.lock()
         if let last = lastSent[session.id], Date().timeIntervalSince(last) < throttle {
@@ -39,52 +31,41 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         lastSent[session.id] = Date()
         lock.unlock()
 
-        let content = UNMutableNotificationContent()
         let cwd = session.cwdDisplay.isEmpty ? "Claude Code" : session.cwdDisplay
-        content.title = "🔔 \(cwd)"
-        content.body = session.currentTask?.isEmpty == false
+        let title = "🔔 \(cwd)"
+        let body = session.currentTask?.isEmpty == false
             ? session.currentTask!
             : "Action required"
-        content.sound = .default
-        var info: [String: Any] = ["session_id": session.id]
-        if let iterm = session.itermSessionID {
-            info["iterm_session_id"] = iterm
-        }
-        content.userInfo = info
 
-        let request = UNNotificationRequest(
-            identifier: "waiting-\(session.id)-\(Date().timeIntervalSince1970)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                NSLog("[notify] send failed: %@", String(describing: error))
-            }
+        let script = """
+        display notification "\(escape(body))" with title "\(escape(title))" sound name "default"
+        """
+
+        // In-process NSAppleScript can be silently dropped by macOS for
+        // LSUIElement + unsigned bundles. Spawning /usr/bin/osascript as a
+        // subprocess routes the notification through the binary's own
+        // identity (script-runner) which posts reliably.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", script]
+        p.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+        } catch {
+            NSLog("[notify] spawn failed: %@", String(describing: error))
+            return
         }
+        // Detached — banner is fire-and-forget; we don't block here.
+        NSLog("[notify] sent for %@", session.id)
     }
 
-    // MARK: - UNUserNotificationCenterDelegate
-
-    /// 앱이 foreground 일 때도 배너 + 사운드를 보여준다 (메뉴바 앱이라 보통 background 지만 안전).
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
-    }
-
-    /// 알림 클릭 → 해당 iTerm 세션으로 점프.
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let info = response.notification.request.content.userInfo
-        if let iterm = info["iterm_session_id"] as? String {
-            _ = ITermActivator.activate(sessionUniqueID: iterm)
-        }
-        completionHandler()
+    /// AppleScript string literal 안에 들어가는 사용자 입력 escape.
+    private static func escape(_ s: String) -> String {
+        return s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
     }
 }
