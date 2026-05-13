@@ -17,6 +17,7 @@ BIN="$ROOT/app/.build/release/ClaudeMenubar"
 HELPER_BIN="$ROOT/app/.build/release/NotifierHelper"
 PLIST="$ROOT/app/Info.plist"
 HELPER_PLIST="$ROOT/app/NotifierHelper-Info.plist"
+HELPER_ICON="$ROOT/app/Resources/NotifierHelper-AppIcon.icns"
 APP="$ROOT/dist/ClaudeMenubar.app"
 HELPER_APP="$APP/Contents/Helpers/NotifierHelper.app"
 
@@ -49,10 +50,18 @@ printf 'APPL????' >"$APP/Contents/PkgInfo"
 # 분리하면 macOS 가 별개 앱으로 인식해 notification 등록 + 권한 흐름이 동작한다.
 echo "[bundle] helper: NotifierHelper"
 mkdir -p "$HELPER_APP/Contents/MacOS"
+mkdir -p "$HELPER_APP/Contents/Resources"
 cp "$HELPER_BIN" "$HELPER_APP/Contents/MacOS/NotifierHelper"
 chmod +x "$HELPER_APP/Contents/MacOS/NotifierHelper"
 cp "$HELPER_PLIST" "$HELPER_APP/Contents/Info.plist"
 printf 'APPL????' >"$HELPER_APP/Contents/PkgInfo"
+# banner 좌측 아이콘 — macOS Notification Center 가 helper bundle 의 app icon
+# 을 banner 좌측에 자동 표시한다. CFBundleIconFile=AppIcon 키와 짝.
+if [[ -f "$HELPER_ICON" ]]; then
+    cp "$HELPER_ICON" "$HELPER_APP/Contents/Resources/AppIcon.icns"
+else
+    echo "Warning: helper icon not found at $HELPER_ICON" >&2
+fi
 
 # Ad-hoc 서명 — TCC 가 helper.app 의 identity 를 안정적으로 인식하려면 최소
 # ad-hoc 서명이 필요하다. (재서명 없이도 unsigned 로 두면 codesign identity 가

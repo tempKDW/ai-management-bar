@@ -10,6 +10,8 @@
     <string>AI Management Bar Notifier</string>
     <key>CFBundleExecutable</key>
     <string>NotifierHelper</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
@@ -22,6 +24,8 @@
     <true/>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>AI Management Bar Notifier 가 알림 클릭 시 iTerm2 의 해당 세션 탭으로 이동하기 위해 자동화 권한이 필요합니다.</string>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 Dong-wook Kim</string>
 </dict>

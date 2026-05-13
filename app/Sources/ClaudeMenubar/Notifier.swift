@@ -41,12 +41,19 @@ enum Notifier {
             return
         }
 
-        let config = NSWorkspace.OpenConfiguration()
-        config.arguments = [
+        var argv: [String] = [
             "--title", title,
             "--message", body,
             "--sound", "default",
         ]
+        // banner click 시 helper 가 iTerm 탭으로 점프할 수 있도록 세션 식별자
+        // 전달. 없으면 click 시 silent no-op (graceful degrade).
+        if let it = session.itermSessionID, !it.isEmpty {
+            argv.append(contentsOf: ["--iterm-session", it])
+        }
+
+        let config = NSWorkspace.OpenConfiguration()
+        config.arguments = argv
         config.activates = false
         NSWorkspace.shared.openApplication(at: helperApp, configuration: config) { _, err in
             if let err = err {
