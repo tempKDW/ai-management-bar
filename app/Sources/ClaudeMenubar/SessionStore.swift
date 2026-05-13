@@ -176,7 +176,7 @@ final class SessionStore: ObservableObject {
                 "cwd_display": tildify(d.cwd, home: home),
                 "transcript_path": d.transcriptPath,
                 "state": "running",
-                "current_task": Self.truncate(d.lastMessage, limit: 80) ?? "활성 세션 (외부 발견)",
+                "current_task": Self.truncate(d.lastMessage, limit: 80) ?? t(.discoveredFallback),
                 "pid": d.pid,
                 "updated_at": isoFormatter.string(from: Date()),
             ]

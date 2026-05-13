@@ -44,6 +44,9 @@ final class ClaudeRecapGenerator {
         if !force, session.claudeRecap?.transcriptHash == hash { return }
 
         let sid = session.id
+        // MainActor 에서 사용자 선택 언어를 capture — detached task 에서는 위
+        // ObservableObject 에 직접 접근 불가.
+        let lang = Localizer.shared.current
         lock.lock()
         if inFlight.contains(sid) { lock.unlock(); return }
         inFlight.insert(sid)
@@ -58,6 +61,7 @@ final class ClaudeRecapGenerator {
                 cwdDisplay: session.cwdDisplay,
                 branch: session.branch,
                 lastEditPath: session.lastEdit?.path,
+                lang: lang,
                 store: store
             )
             self?.lock.lock()
@@ -76,6 +80,7 @@ final class ClaudeRecapGenerator {
         cwdDisplay: String,
         branch: String?,
         lastEditPath: String?,
+        lang: AppLanguage,
         store: SessionStore
     ) async {
         guard let claudePath = resolveClaudePath() else {
@@ -89,18 +94,10 @@ final class ClaudeRecapGenerator {
         }
         // 모델이 transcript 의 마지막 메시지에 이어 답하는 것을 막기 위해 명시적
         // 요약 요청으로 wrapping. transcript 자체는 fenced block 안에 둡니다.
-        let wrapped = """
-        아래는 Claude Code 세션 transcript 입니다. system prompt 의 규칙에 따라\
-         **이 대화를 한국어 2 문장 (60~100 자) 로 요약**만 하세요. transcript 의 \
-        문장을 그대로 인용하지 말고, 대화 이어가기 식으로 응답하지 마세요.
-
-        ----- transcript -----
-        \(transcript)
-        ----- end -----
-
-        요약:
-        """
-        let system = makeSystemPrompt(cwdDisplay: cwdDisplay, branch: branch, lastEditPath: lastEditPath)
+        let wrapped = wrapTranscript(transcript, lang: lang)
+        let system = makeSystemPrompt(
+            cwdDisplay: cwdDisplay, branch: branch, lastEditPath: lastEditPath, lang: lang
+        )
         guard let text = await runClaude(claudePath: claudePath, system: system, stdin: wrapped) else {
             return
         }
@@ -115,29 +112,103 @@ final class ClaudeRecapGenerator {
         NSLog("[recap] saved for session %@ (%d chars)", sessionID, recap.text.count)
     }
 
-    private func makeSystemPrompt(cwdDisplay: String, branch: String?, lastEditPath: String?) -> String {
-        let branchLine = branch.map { "- git branch: \($0)" } ?? "- git branch: (없음)"
-        let editLine = lastEditPath.map { "- 마지막 편집 파일: \($0)" } ?? ""
-        return """
-        당신은 Claude Code 세션 transcript 의 요약기 (summarizer) 입니다. 사용자가 \
-        세션에 돌아왔을 때 한눈에 파악하도록 한국어로 **매우 짧게** 요약합니다.
+    private func wrapTranscript(_ transcript: String, lang: AppLanguage) -> String {
+        switch lang {
+        case .ko, .auto:
+            return """
+            **출력 언어: 한국어 전용.** transcript 가 영어·일본어·중국어 등 어떤 \
+            언어이든 요약은 반드시 한국어로 작성하세요. transcript 의 언어를 따라 \
+            가지 마세요.
 
-        컨텍스트:
-        - 작업 폴더: \(cwdDisplay)
-        \(branchLine)
-        \(editLine)
+            아래는 Claude Code 세션 transcript 입니다. system prompt 의 규칙에 따라\
+             **이 대화를 한국어 2 문장 (60~100 자) 로 요약**만 하세요. transcript 의 \
+            문장을 그대로 인용하지 말고, 대화 이어가기 식으로 응답하지 마세요.
 
-        절대 규칙 (위반 금지):
-        1. 출력은 한국어 1~2 문장. 총 60~100 자. 절대 100 자 초과 금지.
-        2. 대화 이어가기 식 응답 금지 ("…하겠습니다", "확인드립니다" 같은 발화체 금지).
-        3. transcript 의 문장을 그대로 인용 금지. 요약 표현으로 재작성.
-        4. 인사·질문·아이콘·번호·머리말·markdown bullet 금지.
-        5. "사용자는", "Claude 는" 같은 명시적 화자 표기 생략.
+            ----- transcript -----
+            \(transcript)
+            ----- end -----
 
-        형식: 평서문 1~2 줄.
-        - 첫 줄: 지금 무엇을 하고 있는지 (현재 단계 · 막힌 지점).
-        - 두 번째 줄 (선택): 다음 단계 한 가지.
-        """
+            요약 (한국어):
+            """
+        case .en:
+            return """
+            **OUTPUT LANGUAGE: English ONLY.** Even if the transcript is in Korean, \
+            Japanese, Chinese, or any other language, your summary MUST be written \
+            in English. Do not echo the transcript's language.
+
+            Below is a Claude Code session transcript. Following the rules in the \
+            system prompt, **summarize the conversation in 1-2 English sentences \
+            (80-130 chars)** only. Do not quote the transcript verbatim, and do \
+            not continue the conversation.
+
+            ----- transcript -----
+            \(transcript)
+            ----- end -----
+
+            Summary (English):
+            """
+        }
+    }
+
+    private func makeSystemPrompt(
+        cwdDisplay: String, branch: String?, lastEditPath: String?, lang: AppLanguage
+    ) -> String {
+        switch lang {
+        case .ko, .auto:
+            let branchLine = branch.map { "- git branch: \($0)" } ?? "- git branch: (없음)"
+            let editLine = lastEditPath.map { "- 마지막 편집 파일: \($0)" } ?? ""
+            return """
+            **출력 언어: 한국어 전용.** transcript 가 어떤 언어로 쓰였든 결과는 \
+            반드시 한국어. 이 규칙은 다른 모든 규칙보다 우선합니다.
+
+            당신은 Claude Code 세션 transcript 의 요약기 (summarizer) 입니다. 사용자가 \
+            세션에 돌아왔을 때 한눈에 파악하도록 한국어로 **매우 짧게** 요약합니다.
+
+            컨텍스트:
+            - 작업 폴더: \(cwdDisplay)
+            \(branchLine)
+            \(editLine)
+
+            절대 규칙 (위반 금지):
+            1. 출력은 한국어 1~2 문장. 총 60~100 자. 절대 100 자 초과 금지.
+            2. 대화 이어가기 식 응답 금지 ("…하겠습니다", "확인드립니다" 같은 발화체 금지).
+            3. transcript 의 문장을 그대로 인용 금지. 요약 표현으로 재작성.
+            4. 인사·질문·아이콘·번호·머리말·markdown bullet 금지.
+            5. "사용자는", "Claude 는" 같은 명시적 화자 표기 생략.
+
+            형식: 평서문 1~2 줄.
+            - 첫 줄: 지금 무엇을 하고 있는지 (현재 단계 · 막힌 지점).
+            - 두 번째 줄 (선택): 다음 단계 한 가지.
+            """
+        case .en:
+            let branchLine = branch.map { "- git branch: \($0)" } ?? "- git branch: (none)"
+            let editLine = lastEditPath.map { "- last edited file: \($0)" } ?? ""
+            return """
+            **OUTPUT LANGUAGE: English ONLY.** Regardless of the transcript's \
+            language, your output MUST be in English. This rule overrides every \
+            other rule below.
+
+            You are a summarizer for a Claude Code session transcript. Produce a \
+            **very short** English summary so the user can re-orient at a glance \
+            when returning to the session.
+
+            Context:
+            - working dir: \(cwdDisplay)
+            \(branchLine)
+            \(editLine)
+
+            Hard rules (do not violate):
+            1. Output 1-2 English sentences. Total 80-130 chars. Never exceed 130 chars.
+            2. Do not write conversational replies ("I will...", "Sure, let me..."). State facts only.
+            3. Do not quote the transcript verbatim. Rephrase as a summary.
+            4. No greetings, questions, emoji, numbering, headings, or markdown bullets.
+            5. Drop explicit speaker labels like "the user" or "Claude" where possible.
+
+            Format: 1-2 declarative lines.
+            - Line 1: what is happening now (current step / where it is stuck).
+            - Line 2 (optional): one obvious next step.
+            """
+        }
     }
 
     // MARK: - transcript → text

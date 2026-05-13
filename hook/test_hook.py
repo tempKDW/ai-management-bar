@@ -62,7 +62,7 @@ class HookTests(unittest.TestCase):
         self.assertIsNotNone(state)
         # 세션 시작 직후엔 사용자 입력 대기 — idle 이 정확 (running 아님)
         self.assertEqual(state["state"], "idle")
-        self.assertIn("세션 시작", state["current_task"])
+        self.assertIn("Session started", state["current_task"])
         self.assertEqual(state["iterm_session_id"], "w0t0p0:UUID-A")
         self.assertEqual(state["cwd_display"], "~")
 

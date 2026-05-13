@@ -25,7 +25,7 @@ struct ReentryBriefView: View {
     @ViewBuilder
     private var claudeRecapSection: some View {
         if let recap = session.claudeRecap {
-            sectionContainer(icon: "🌀", title: "자동 recap (\(relativeTime(recap.generatedAt)))") {
+            sectionContainer(icon: "🌀", title: t(.autoRecapWithTime(relativeTime(recap.generatedAt)))) {
                 Text(recap.text)
                     .font(.system(size: 11))
                     .foregroundStyle(.primary)
@@ -33,8 +33,8 @@ struct ReentryBriefView: View {
                     .textSelection(.enabled)
             }
         } else {
-            sectionContainer(icon: "🌀", title: "자동 recap") {
-                Text("AFK 5 분 후 자동 생성됩니다. 그 전엔 사용자가 진행 중이라고 봅니다.")
+            sectionContainer(icon: "🌀", title: t(.autoRecap)) {
+                Text(t(.autoRecapHint))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -46,7 +46,7 @@ struct ReentryBriefView: View {
         let full = recap.text
         let preview = String(full.prefix(280))
         let truncated = full.count > preview.count
-        return sectionContainer(icon: "📋", title: "Compact recap (이전 컨텍스트 압축)") {
+        return sectionContainer(icon: "📋", title: t(.compactRecapHeader)) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(recapExpanded ? full : preview + (truncated ? "…" : ""))
                     .font(.system(size: 11))
@@ -54,7 +54,7 @@ struct ReentryBriefView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if truncated {
-                    Button(recapExpanded ? "Collapse" : "Show all (\(full.count) chars)") {
+                    Button(recapExpanded ? t(.collapse) : t(.showAll(full.count))) {
                         recapExpanded.toggle()
                     }
                     .buttonStyle(.plain)
@@ -66,12 +66,12 @@ struct ReentryBriefView: View {
     }
 
     private var locationSection: some View {
-        sectionContainer(icon: "📍", title: "위치") {
+        sectionContainer(icon: "📍", title: t(.location)) {
             VStack(alignment: .leading, spacing: 2) {
                 if let edit = session.lastEdit {
                     Text(edit.basename)
                         .font(.system(size: 11, weight: .medium))
-                    Text("(마지막 편집) \(edit.path)")
+                    Text(t(.lastEditPrefix) + edit.path)
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -98,7 +98,7 @@ struct ReentryBriefView: View {
             Button {
                 copyBriefToPasteboard()
             } label: {
-                Label("복사", systemImage: "doc.on.doc")
+                Label(t(.copy), systemImage: "doc.on.doc")
                     .font(.system(size: 10))
             }
             .buttonStyle(.plain)
@@ -106,7 +106,7 @@ struct ReentryBriefView: View {
             Button {
                 activate()
             } label: {
-                Label("iTerm 탭", systemImage: "arrow.up.right.square")
+                Label(t(.itermTab), systemImage: "arrow.up.right.square")
                     .font(.system(size: 10))
             }
             .buttonStyle(.plain)
@@ -134,12 +134,12 @@ struct ReentryBriefView: View {
     }
 
     private func relativeTime(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "방금" }
+        guard let d = parseISO(iso) else { return t(.justNow) }
         let dt = Date().timeIntervalSince(d)
-        if dt < 60 { return "방금" }
-        if dt < 3600 { return "\(Int(dt / 60))분 전" }
-        if dt < 86400 { return "\(Int(dt / 3600))시간 전" }
-        return "\(Int(dt / 86400))일 전"
+        if dt < 60 { return t(.justNow) }
+        if dt < 3600 { return t(.minutesAgo(Int(dt / 60))) }
+        if dt < 86400 { return t(.hoursAgo(Int(dt / 3600))) }
+        return t(.daysAgo(Int(dt / 86400)))
     }
 
     private func parseISO(_ s: String) -> Date? {
@@ -154,18 +154,18 @@ struct ReentryBriefView: View {
     private func copyBriefToPasteboard() {
         var lines: [String] = []
         if let r = session.claudeRecap {
-            lines.append("🌀 자동 recap (\(relativeTime(r.generatedAt)))")
+            lines.append("🌀 " + t(.autoRecapWithTime(relativeTime(r.generatedAt))))
             lines.append(r.text)
             lines.append("")
         }
         if let r = session.lastRecap {
-            lines.append("📋 Compact recap")
+            lines.append("📋 " + t(.compactRecapHeader))
             lines.append(r.text)
             lines.append("")
         }
         lines.append("📍 \(session.cwdDisplay) · \(session.branch ?? "")")
         if let edit = session.lastEdit {
-            lines.append("   last edit: \(edit.path)")
+            lines.append("   " + t(.lastEditPrefix) + edit.path)
         }
         let pb = NSPasteboard.general
         pb.clearContents()

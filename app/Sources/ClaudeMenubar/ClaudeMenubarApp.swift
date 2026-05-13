@@ -62,6 +62,12 @@ struct ClaudeMenubarApp: App {
 
 struct MenuContent: View {
     @ObservedObject var store: SessionStore
+    @ObservedObject private var localizer = Localizer.shared
+
+    @State private var showingSettings: Bool = false
+    /// 패널이 열려 있는 동안의 임시 선택값. Save 시점에 Localizer 로 commit.
+    /// Close 면 그대로 폐기되고 다음 패널 열기 때 현재 preference 로 재초기화.
+    @State private var draftLanguage: AppLanguage = .auto
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -69,7 +75,7 @@ struct MenuContent: View {
                 Text("Claude Code")
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text("\(store.sessions.count) active")
+                Text(t(.activeCount(store.sessions.count)))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -80,10 +86,10 @@ struct MenuContent: View {
 
             if store.sessions.isEmpty {
                 VStack(spacing: 6) {
-                    Text("활성 세션 없음")
+                    Text(t(.emptyTitle))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
-                    Text("iTerm2 탭에서 Claude Code 를 띄우면\n여기에 자동으로 나타납니다.")
+                    Text(t(.emptySubtitle))
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
@@ -104,22 +110,39 @@ struct MenuContent: View {
 
             Divider()
 
-            HStack(spacing: 16) {
+            if showingSettings {
+                settingsPanel
+                Divider()
+            }
+
+            HStack(spacing: 12) {
                 if store.isRefreshing {
                     HStack(spacing: 6) {
                         ProgressView()
                             .scaleEffect(0.5)
                             .frame(width: 14, height: 14)
-                        Text("Refreshing…")
+                        Text(t(.refreshing))
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Button("Refresh") { store.forceRecapAll() }
+                    Button(t(.refresh)) { store.forceRecapAll() }
                         .buttonStyle(.plain)
                         .disabled(store.isRefreshing)
                 }
                 Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
+                Button {
+                    // 패널 진입 시 현재 preference 를 draft 로 동기화.
+                    if !showingSettings {
+                        draftLanguage = localizer.preference
+                    }
+                    showingSettings.toggle()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help(t(.settings))
+                Button(t(.quit)) { NSApp.terminate(nil) }
                     .buttonStyle(.plain)
             }
             .font(.system(size: 12))
@@ -130,6 +153,44 @@ struct MenuContent: View {
         .onAppear {
             store.markAllViewed()
         }
+    }
+
+    /// gear 클릭 시 footer 위에 등장하는 inline settings 패널.
+    /// Save 누를 때만 (변경 시) recap 재생성이 일어나도록 해서 빠른 picker 토글이
+    /// 중복 refresh 를 일으키지 않는다.
+    private var settingsPanel: some View {
+        HStack(spacing: 10) {
+            Text(t(.language))
+                .foregroundStyle(.secondary)
+            Picker("", selection: $draftLanguage) {
+                ForEach(AppLanguage.allCases) { lang in
+                    Text(lang.pickerLabel).tag(lang)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 150)
+
+            Spacer()
+
+            Button(t(.close)) {
+                showingSettings = false
+            }
+            .buttonStyle(.plain)
+
+            Button(t(.save)) {
+                let changed = draftLanguage != localizer.preference
+                if changed {
+                    localizer.setPreference(draftLanguage)
+                    store.forceRecapAll()
+                }
+                showingSettings = false
+            }
+            .buttonStyle(.plain)
+        }
+        .font(.system(size: 12))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 

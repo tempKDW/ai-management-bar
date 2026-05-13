@@ -1,191 +1,198 @@
 # ai-management-bar
 
-> macOS 메뉴 막대에서 여러 Claude Code 세션을 한눈에 보고, AFK 사이에 자동 요약된 맥락으로 빠르게 따라잡는 도구.
+> A macOS menubar app that surfaces every Claude Code session running in iTerm2 — with auto-generated recaps so you can re-orient at a glance after stepping away.
 
-## 목표
+## Goals
 
-이 도구가 해결하려는 두 가지 문제:
+This tool solves two problems:
 
-1. **더 편한 Claude Code 탭 관리** — iTerm2 의 여러 탭에 띄워둔 Claude Code 세션을 메뉴 막대 한 곳에서 보고, 행 클릭으로 해당 탭으로 즉시 이동. 상태(작업 중 / 입력 대기 / 완료)도 한눈에.
-2. **한눈에 빠르게 모든 AI 작업 맥락 파악** — 각 세션이 지금 어디서 무얼 하고 있는지 (cwd · git branch · 작업 요약) 표시. 사용자가 자리를 5분 이상 비우면 백그라운드에서 `claude` CLI 가 한국어 두 문장 recap 을 미리 만들어둠 → 돌아왔을 때 대기 시간 0초.
+1. **Easier Claude Code tab management** — see every Claude Code session running across iTerm2 tabs in one menubar dropdown, click a row to jump to that tab, and read each session's state (running / awaiting input / done) at a glance.
+2. **Catch up on AI work at a glance** — each row shows where the session is working (cwd · git branch · current task). When you've been AFK for 5+ minutes, the app runs `claude` in the background to produce a short recap so the dropdown is ready the moment you open it.
 
-## 한눈에 보기
+## At a glance
 
 ```
 ●  Claude Code (3)
 ─────────────────────────────────────────────────
 🔵 🟢  ~/WorkSpace/my-wiki  ·  main          running    ▶
-       노트 정리 스크립트 리팩토링
+       Refactoring the notes-organizer script
 ─────────────────────────────────────────────────
-   🟡  ~/WorkSpace/fleet-deploy  ·  feat/x   waiting    ▶
-       Bash 실행 허가 필요
+   🔔  ~/WorkSpace/fleet-deploy  ·  feat/x   waiting    ▶
+       Bash approval required
 ─────────────────────────────────────────────────
-   ✅  ~/WorkSpace/docs-update  ·  main      done       ▶
-       PR #423 완료
+   ✅  ~/WorkSpace/docs-update   ·  main     done       ▶
+       PR #423 merged
 ─────────────────────────────────────────────────
 ```
 
-`▶ chevron` 펼침 시 패널:
+Expanding the `▶ chevron` reveals:
 
 ```
-🌀 자동 recap (2분 전)
-   글로벌 CLAUDE.md 의 비효과 규칙을 정리해 행동·협업 중심으로 축약했다.
-   my-wiki 의 CLAUDE.md 에서 wiki 운영 규칙 검증이 남았다.
+🌀 Auto recap (2m ago)
+   Stripped the ineffective rules from the global CLAUDE.md so behavior
+   and collaboration guidance lead. Validation of the wiki-ops rules in
+   my-wiki/CLAUDE.md is still pending.
 
-📋 Compact recap          ← Claude Code 가 컨텍스트 한도 시 자동 생성한 요약 (있을 때만)
+📋 Compact recap (previous context summary)    ← Claude Code's compact summary, when present
    Summary: 1. Primary Request: ...
 
-📍 위치
-   src/api.py (마지막 편집)
+📍 Location
+   src/api.py (last edit)
    ~/WorkSpace/my-wiki · main
 ─────────────────────────────────────────────────
-[복사]  [iTerm 탭]
+[Copy]  [iTerm tab]
 ```
 
-메뉴바 아이콘은 **상태 인식**:
-- 전부 idle/done → 회색 outline bubble
-- 하나라도 running → 채워진 bubble
-- 하나라도 waiting → **주황 ⚠️ bubble** (시선 끔)
+Menubar icon is **state-aware**:
+- all idle/done → grey outline bubble
+- any running → filled bubble
+- any waiting → **orange exclamation bubble** (catches the eye)
 
-## 동작 원리
+## How it works
 
 ```
-┌──────────────────────────┐    파일/이벤트     ┌──────────────────────────┐
-│  Claude Code 세션 (iTerm │ ───────────────▶  │   SwiftUI MenuBarExtra   │
-│  tab N)                  │   상태 JSON       │   앱 (단일 프로세스)      │
-│                          │                   │                          │
-│  lifecycle hooks         │                   │  • FSEvents 폴더 감시    │
-│  (SessionStart, Stop, …) │                   │  • 행 클릭 → iTerm2 탭   │
-│                          │                   │  • AFK 5분 → claude CLI  │
-│                          │                   │    recap (background)    │
-└──────────────────────────┘                   └──────────────────────────┘
+┌──────────────────────────┐    file/event       ┌──────────────────────────┐
+│  Claude Code session     │ ─────────────────▶  │   SwiftUI MenuBarExtra   │
+│  (iTerm tab N)           │   state JSON        │   app (single process)   │
+│                          │                     │                          │
+│  lifecycle hooks         │                     │  • FSEvents directory    │
+│  (SessionStart, Stop, …) │                     │    watcher               │
+│                          │                     │  • row click → iTerm tab │
+│                          │                     │  • 5 min AFK → claude    │
+│                          │                     │    CLI recap (bg)        │
+└──────────────────────────┘                     └──────────────────────────┘
 ```
 
-3 가지 컴포넌트:
+Three components:
 
-1. **Hook 스크립트** (`~/.claude/menubar/bin/hook.py`)
-   - Claude Code 가 lifecycle event 마다 stdin 으로 JSON 페이로드 전송
-   - 상태 파일 `~/.claude/menubar/sessions/<session_id>.json` 갱신
-2. **상태 디렉터리** — 세션 1개당 파일 1개 (단일 진실 소스)
-3. **SwiftUI MenuBarExtra 앱**
-   - 상태 디렉터리를 FSEvents 로 감시 → 변경 즉시 UI 갱신
-   - 10초 polling 마다 AFK 5분 + transcript 갱신 감지 → background `claude` CLI 호출
-   - 행 클릭 → `osascript` 로 iTerm2 탭 활성화 (`ITERM_SESSION_ID` 매핑)
+1. **Hook script** (`~/.claude/menubar/bin/hook.py`)
+   - Claude Code sends a JSON payload on each lifecycle event via stdin.
+   - The hook updates the state file at `~/.claude/menubar/sessions/<session_id>.json`.
+2. **State directory** — one file per session (single source of truth).
+3. **SwiftUI MenuBarExtra app**
+   - Watches the state directory with FSEvents → instant UI updates.
+   - Polls every 10 seconds to detect 5 min AFK + transcript change → calls `claude` CLI in the background.
+   - Row click → `osascript` activates the iTerm2 tab (via `ITERM_SESSION_ID` mapping).
+
+## Languages
+
+UI labels and auto-recap output ship in **English and Korean**. A segmented picker in the footer (Auto / KO / EN) toggles the active language. **Auto** follows the macOS system language: Korean system → Korean, otherwise English. Toggling language re-triggers recap generation for all sessions so existing recaps switch to the new language.
 
 ## Quick start (built binary)
 
-GitHub Actions 가 매 main push 마다 macOS `.app` bundle 을 자동으로 빌드해 [Releases → Latest](https://github.com/tempKDW/ai-management-bar/releases/latest) 에 올립니다.
+GitHub Actions builds a macOS `.app` bundle on every push to `main` and publishes it to [Releases → Latest](https://github.com/tempKDW/ai-management-bar/releases/latest).
 
-1. **다운로드**: `ClaudeMenubar.app.zip` 받아 압축 풀기
-2. **이동**: `ClaudeMenubar.app` 을 `/Applications` 또는 `~/Applications` 로
-3. **Gatekeeper 우회 (첫 실행만)** — 미서명 빌드이므로:
-   - 방법 A: Finder 에서 `ClaudeMenubar.app` 우클릭 → **열기** → 경고창의 "열기" 다시 클릭
-   - 방법 B: 터미널에서 `xattr -dr com.apple.quarantine /Applications/ClaudeMenubar.app` 한 줄
-4. **iTerm2 자동화 권한** — 처음 행 클릭 시 macOS 가 권한 prompt → 허용
-5. **알림 권한** (waiting 전이 banner) — 첫 waiting 검출 시 동봉된 `NotifierHelper.app` 이 알림 권한 prompt 를 한 번 띄움 → 허용. 거부해도 메뉴바 아이콘 강조 + 행 🔔 표시는 동작.
-   - **Focus 모드** 가 켜져 있으면 banner 가 막힙니다. Settings → Focus → 해당 모드의 "Allowed Apps" 에 `AI Management Bar Notifier` 추가하면 통과.
+1. **Download** `ClaudeMenubar.app.zip` and unzip it.
+2. **Move** `ClaudeMenubar.app` to `/Applications` or `~/Applications`.
+3. **Gatekeeper bypass (first launch only)** — the build is unsigned:
+   - Option A: in Finder, right-click `ClaudeMenubar.app` → **Open** → click "Open" again on the warning.
+   - Option B: in a terminal, `xattr -dr com.apple.quarantine /Applications/ClaudeMenubar.app`.
+4. **iTerm2 automation permission** — macOS prompts the first time you click a row → allow.
+5. **Notification permission** (banner on `waiting` transitions) — the bundled `NotifierHelper.app` raises its own permission prompt on the first waiting detection → allow. If you deny, the menubar icon + row 🔔 emphasis still work; only the banner is suppressed.
+   - **Focus mode** suppresses banners by default. Settings → Focus → add `AI Management Bar Notifier` to "Allowed Apps" to let banners through.
 
-요구사항: macOS 13+ · `claude` CLI 가 `PATH` 에 있어야 자동 recap 동작 (`which claude` 확인).
+Requirements: macOS 13+ · `claude` CLI on `PATH` for auto recap (`which claude` to confirm).
 
 ## Build from source
 
 ```sh
-xcode-select --install   # Swift toolchain (이미 있으면 skip)
-which claude             # claude CLI 확인
+xcode-select --install   # Swift toolchain (skip if already installed)
+which claude             # verify the claude CLI
 
-# 빌드 & 실행
+# Build & run
 cd app
 swift build -c release
 ./.build/release/ClaudeMenubar
 
-# 또는 .app bundle 까지 만들기
+# Or produce a packaged .app bundle
 bash scripts/make-app-bundle.sh --build
 open dist/ClaudeMenubar.app
 ```
 
-앱 시작 시 자동으로:
+On startup the app automatically:
 
-1. `~/.claude/menubar/bin/hook.py` + `transcript_signals.py` 디스크에 생성
-2. `~/.claude/settings.json` 백업 후 hooks 섹션에 안전 머지 (다른 도구 hook 보존)
-3. 메뉴 막대에 아이콘 표시 + 활성 세션 자동 발견
+1. Writes `~/.claude/menubar/bin/hook.py` and `transcript_signals.py` to disk.
+2. Backs up `~/.claude/settings.json` and merges the hook entries safely (preserving any other hooks).
+3. Shows the icon in the menubar and discovers existing live sessions.
 
-## 부팅 시 자동 실행 (선택)
+## Launch at login (optional)
 
-시스템 설정 → 로그인 항목에 `ClaudeMenubar.app` 추가.
+Add `ClaudeMenubar.app` to System Settings → Login Items.
 
-## 자동 recap 정책
+## Auto recap policy
 
-**트리거**: transcript jsonl 의 mtime 이 `now - 5분` 이전 (AFK 판단). 마지막 recap 이후 transcript hash 가 변했을 때만 호출.
+**Trigger**: transcript jsonl's mtime is older than `now - 5 min` (AFK heuristic). Only fires if the transcript hash changed since the last recap.
 
-**한 번만 정책**: 생성 후 추가 활동 없으면 재호출 안 함. 새 활동 시작 → 다시 5분 quiet 대기.
+**Once per quiet period**: after a recap is generated, no further calls until new activity → another 5 min quiet wait.
 
-**비용**: 사용자의 Claude 구독 quota 차감 (`--model haiku` 기본).
+**Cost**: charged against your Claude subscription quota (`--model haiku` by default).
 
-**대기 시간**: 사용자가 dropdown 열 때 0초. 호출은 백그라운드에서 미리 끝나 있음.
+**Latency**: zero seconds when you open the dropdown — the call has already finished in the background.
 
-## 파일 구조
+## File layout
 
 ```
 .
 ├── hook/
-│   ├── hook.py                 ← 정본
-│   ├── transcript_signals.py   ← jsonl 신호 추출 (마지막 편집·compact recap)
+│   ├── hook.py                 ← canonical
+│   ├── transcript_signals.py   ← jsonl signal extraction (last edit · compact recap)
 │   ├── test_hook.py
 │   └── test_transcript_signals.py
 ├── app/                        ← Swift Package Manager
 │   ├── Package.swift
 │   ├── Info.plist
-│   ├── NotifierHelper-Info.plist    ← helper bundle Info.plist
+│   ├── NotifierHelper-Info.plist     ← helper bundle Info.plist
 │   └── Sources/
 │       ├── ClaudeMenubar/
 │       │   ├── ClaudeMenubarApp.swift     ← @main · MenuBarExtra
 │       │   ├── SessionState.swift
 │       │   ├── SessionStore.swift         ← FSEvents · polling · patch
 │       │   ├── SessionRowView.swift       ← row · chevron · expand
-│       │   ├── ReentryBriefView.swift     ← brief 패널
-│       │   ├── ITermActivator.swift       ← osascript iTerm2 탭 활성화
-│       │   ├── ClaudeRecapGenerator.swift ← AFK 자동 recap
-│       │   ├── HookInstaller.swift        ← settings.json 안전 머지
-│       │   ├── SessionDiscovery.swift     ← 앱 시작 전 떠 있던 세션 발견
-│       │   ├── Notifier.swift             ← waiting 전이 banner (helper launch)
-│       │   └── EmbeddedHookSource.swift   ← hook 임베드 사본 (앱 단독 동작용)
-│       └── NotifierHelper/main.swift      ← UN banner sender (자체 bundleID)
+│       │   ├── ReentryBriefView.swift     ← brief panel
+│       │   ├── ITermActivator.swift       ← osascript iTerm2 tab activation
+│       │   ├── ClaudeRecapGenerator.swift ← AFK auto recap
+│       │   ├── HookInstaller.swift        ← settings.json safe merge
+│       │   ├── SessionDiscovery.swift     ← discover sessions started before app launch
+│       │   ├── Notifier.swift             ← waiting → banner (launches helper)
+│       │   ├── Localizer.swift            ← AppLanguage + L10n keys (KO / EN)
+│       │   └── EmbeddedHookSource.swift   ← embedded hook copy (single-binary distribution)
+│       └── NotifierHelper/main.swift      ← UN banner sender with its own bundle ID
 └── scripts/
-    └── install.sh              ← CLI 로 hook 등록 (선택)
+    └── install.sh              ← CLI hook installer (optional)
 ```
 
-## 개발
+## Development
 
-### Python 단위 테스트
+### Python unit tests
 
 ```sh
 python3 hook/test_hook.py
 python3 hook/test_transcript_signals.py
 ```
 
-### hook.py 정본 ↔ Swift 임베드 동기화 검증
+### Verify hook canonical ↔ Swift embed sync
 
-`hook/hook.py` 와 `hook/transcript_signals.py` 가 정본이며, `app/Sources/ClaudeMenubar/EmbeddedHookSource.swift` 의 raw string 으로 임베드되어 앱이 단독 배포 가능합니다. 수정 시 둘 다 같이 갱신:
+`hook/hook.py` and `hook/transcript_signals.py` are the source of truth; `app/Sources/ClaudeMenubar/EmbeddedHookSource.swift` embeds them as raw strings so the app can ship standalone. When you edit one, update the other:
 
 ```sh
-# hook.py 동기화 확인
+# hook.py sync check
 diff <(python3 -c "import re; s=open('app/Sources/ClaudeMenubar/EmbeddedHookSource.swift').read(); m=re.search(r'hookSource: String = #\"\"\"\n(.*?)\n\"\"\"#', s, re.S); print(m.group(1))") hook/hook.py
 
-# transcript_signals.py 동기화 확인
+# transcript_signals.py sync check
 diff <(python3 -c "import re; s=open('app/Sources/ClaudeMenubar/EmbeddedHookSource.swift').read(); m=re.search(r'transcriptSignalsSource: String = #\"\"\"\n(.*?)\n\"\"\"#', s, re.S); print(m.group(1))") hook/transcript_signals.py
 ```
 
-차이가 없으면 동기화 OK.
+No diff = in sync (a trailing-newline-only diff is benign).
 
-## 의도적으로 빼놓은 것 (YAGNI)
+## Intentionally out of scope (YAGNI)
 
-- iTerm2 외 터미널 지원
-- 별도 dashboard 윈도우
-- 원격 세션
-- 세션 간 link 추적
-- 진척률 % 표시 (TodoWrite 파싱)
+- Non-iTerm2 terminals
+- A standalone dashboard window
+- Remote sessions
+- Cross-session linking
+- Progress percentage (TodoWrite parsing)
 
-향후 필요해지면 별도 phase 로.
+If any of these become valuable, they earn their own phase.
 
 ## License
 

@@ -34,7 +34,7 @@ enum Notifier {
         let title = "🔔 \(cwd)"
         let body = session.currentTask?.isEmpty == false
             ? session.currentTask!
-            : "Action required"
+            : t(.actionRequired)
 
         guard let helperApp = helperAppURL() else {
             NSLog("[notify] NotifierHelper.app not found in bundle")
