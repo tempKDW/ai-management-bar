@@ -182,4 +182,6 @@ diff <(python3 -c "import re; s=open('app/Sources/ClaudeMenubar/EmbeddedHookSour
 
 ## License
 
-Personal project. 사용·수정·재배포 자유.
+[MIT](LICENSE) © 2026 Dong-wook Kim ([@tempKDW](https://github.com/tempKDW))
+
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
