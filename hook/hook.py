@@ -173,8 +173,10 @@ def main() -> None:
         state["iterm_session_id"] = iterm
 
     if event == "SessionStart":
-        state["state"] = "running"
-        state["current_task"] = "세션 시작"
+        # 세션 시작 직후엔 사용자 prompt 대기 중 — running 으로 표시하면
+        # "AI 가 작업 중" 으로 오해. idle 이 정확.
+        state["state"] = "idle"
+        state["current_task"] = "세션 시작 · 입력 대기"
 
     elif event == "UserPromptSubmit":
         prompt = payload.get("prompt", "")
@@ -183,13 +185,18 @@ def main() -> None:
         state["current_task"] = truncate(prompt, 80) or "작업 중"
 
     elif event == "PreToolUse":
+        # waiting 상태였더라도 PreToolUse 가 발화했다는 것 자체가 사용자가
+        # 권한을 허용해 tool 실행이 시작됐다는 신호 — 무조건 running 으로.
         tool_name = payload.get("tool_name", "도구")
-        if state.get("state") != "waiting":
-            state["state"] = "running"
-            base = state.get("last_prompt") or ""
-            state["current_task"] = (
-                truncate(f"{tool_name} · {base}", 80) if base else f"{tool_name} 실행 중"
-            )
+        state["state"] = "running"
+        base = state.get("last_prompt") or ""
+        state["current_task"] = (
+            truncate(f"{tool_name} · {base}", 80) if base else f"{tool_name} 실행 중"
+        )
+
+    elif event == "PostToolUse":
+        # tool 실행 직후 — AI 가 다음 응답·도구 호출을 준비 중. running 유지.
+        state["state"] = "running"
 
     elif event == "Notification":
         message = payload.get("message", "")

@@ -50,7 +50,7 @@ class HookTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_session_start_creates_file(self):
+    def test_session_start_creates_file_in_idle(self):
         payload = {
             "hook_event_name": "SessionStart",
             "session_id": self.sid,
@@ -60,8 +60,9 @@ class HookTests(unittest.TestCase):
         run_hook(payload, self.home, {"ITERM_SESSION_ID": "w0t0p0:UUID-A"})
         state = read_state(self.home, self.sid)
         self.assertIsNotNone(state)
-        self.assertEqual(state["state"], "running")
-        self.assertEqual(state["current_task"], "세션 시작")
+        # 세션 시작 직후엔 사용자 입력 대기 — idle 이 정확 (running 아님)
+        self.assertEqual(state["state"], "idle")
+        self.assertIn("세션 시작", state["current_task"])
         self.assertEqual(state["iterm_session_id"], "w0t0p0:UUID-A")
         self.assertEqual(state["cwd_display"], "~")
 
@@ -117,17 +118,29 @@ class HookTests(unittest.TestCase):
         # current_task 는 직전 UserPromptSubmit 의 prompt 가 그대로 남아있어야 함
         self.assertEqual(state["current_task"], "구현해줘")
 
-    def test_pre_tool_use_does_not_clobber_waiting(self):
+    def test_pre_tool_use_releases_waiting_state(self):
+        """권한 요청 (waiting) 직후 사용자 허용 → tool 실행 (PreToolUse 발화) 시
+        running 으로 자연 전환되어야 한다 (Phase 9). 이전엔 waiting 가드 때문에
+        stuck 됐었음."""
         run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
                   "cwd": str(self.home)}, self.home)
         run_hook({"hook_event_name": "Notification", "session_id": self.sid,
                   "cwd": str(self.home), "message": "권한 필요"}, self.home)
-        # Now a PreToolUse fires - it should NOT switch state back to running
+        # 사용자 허용 → PreToolUse 발화 시 waiting 풀려야 함
         run_hook({"hook_event_name": "PreToolUse", "session_id": self.sid,
                   "cwd": str(self.home), "tool_name": "Bash"}, self.home)
         state = read_state(self.home, self.sid)
-        self.assertEqual(state["state"], "waiting")
-        self.assertEqual(state["current_task"], "권한 필요")
+        self.assertEqual(state["state"], "running")
+        self.assertIn("Bash", state["current_task"])
+
+    def test_post_tool_use_sets_running(self):
+        """tool 실행 종료 후 AI 가 다음 응답·도구 진행 중 — running 유지."""
+        run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
+                  "cwd": str(self.home)}, self.home)
+        run_hook({"hook_event_name": "PostToolUse", "session_id": self.sid,
+                  "cwd": str(self.home), "tool_name": "Bash"}, self.home)
+        state = read_state(self.home, self.sid)
+        self.assertEqual(state["state"], "running")
 
     def test_stop_uses_transcript(self):
         run_hook({"hook_event_name": "SessionStart", "session_id": self.sid,
